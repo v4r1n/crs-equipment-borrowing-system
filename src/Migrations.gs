@@ -31,27 +31,40 @@ function maxIdNumber_(sheetName, idField, prefix) {
 
 /** Must be called while the caller holds the Script Lock. */
 function nextIdLocked_(sequenceName) {
+  return nextIdsLocked_(sequenceName, 1)[0];
+}
+
+/** Must be called while the caller holds the Script Lock. */
+function nextIdsLocked_(sequenceName, count) {
   var definition = SEQUENCE_DEFINITIONS[sequenceName];
   assertApp_(definition, 'CONFIG_ERROR', 'ไม่รู้จักลำดับ ID: ' + sequenceName, null, false);
+  var requested = Number(count);
+  assertApp_(Number.isSafeInteger(requested) && requested >= 0 && requested <= 10000,
+    'VALIDATION_FAILED', 'จำนวน ID ที่ต้องการไม่ถูกต้อง', null, false);
+  if (!requested) return [];
   var sequence = findRecordByField_(SHEETS.SEQUENCES, 'sequence_name', sequenceName, false);
   assertApp_(sequence, 'CONFIG_ERROR', 'ไม่พบลำดับ ID กรุณารัน setupSystem()', null, false);
   var candidateNumber = Number(sequence.next_value);
   assertApp_(Number.isSafeInteger(candidateNumber) && candidateNumber > 0,
     'SCHEMA_ERROR', 'ค่า sequence ไม่ถูกต้อง: ' + sequenceName, null, false);
-  var candidate = '';
+  var candidates = [];
   var attempts = 0;
   var existingIds = getFieldValueSet_(definition.sheet, definition.idField);
-  do {
-    candidate = definition.prefix + padNumber_(candidateNumber, definition.padding);
+  while (candidates.length < requested) {
+    var candidate = definition.prefix + padNumber_(candidateNumber, definition.padding);
     candidateNumber += 1;
     attempts += 1;
-    assertApp_(attempts <= 10000, 'SCHEMA_ERROR', 'ไม่สามารถสร้าง ID ที่ไม่ซ้ำได้', null, false);
-  } while (existingIds[candidate]);
+    assertApp_(attempts <= requested + 10000, 'SCHEMA_ERROR',
+      'ไม่สามารถสร้าง ID ที่ไม่ซ้ำได้', null, false);
+    if (existingIds[candidate]) continue;
+    existingIds[candidate] = true;
+    candidates.push(candidate);
+  }
   updateRecordById_(SHEETS.SEQUENCES, 'sequence_name', sequenceName, {
     next_value: candidateNumber,
     updated_at: nowIso_()
   });
-  return candidate;
+  return candidates;
 }
 
 function preflightRecordedMigrationsRaw_(spreadsheet) {
@@ -127,6 +140,7 @@ function validateCriticalUniquenessLocked_() {
     [SHEETS.INCLUDED_ITEMS, [['item_id', false, normalizeWhitespace_]]],
     [SHEETS.BORROW_ITEMS, [['borrow_item_id', false, normalizeWhitespace_]]],
     [SHEETS.HISTORY, [['log_id', false, normalizeWhitespace_]]],
+    [SHEETS.OPERATIONS, [['operation_id', false, normalizeWhitespace_]]],
     [SHEETS.SETTINGS, [['setting_key', false, normalizeWhitespace_]]],
     [SHEETS.SEQUENCES, [['sequence_name', false, normalizeWhitespace_]]],
     [SHEETS.SCHEMA_MIGRATIONS, [['migration_id', false, normalizeWhitespace_]]]
@@ -142,6 +156,52 @@ function validateCriticalUniquenessLocked_() {
       );
     });
   });
+}
+
+function migrateBorrowItemRequiredFlagsLocked_() {
+  var requiredByItemId = Object.create(null);
+  listRecords_(SHEETS.INCLUDED_ITEMS).forEach(function (item) {
+    requiredByItemId[item.item_id] = !(item.is_required === false ||
+      String(item.is_required).toUpperCase() === 'FALSE');
+  });
+  var table = readTable_(SHEETS.BORROW_ITEMS);
+  var columnIndex = table.headers.indexOf('is_required');
+  assertApp_(columnIndex !== -1, 'SCHEMA_ERROR',
+    'ไม่พบคอลัมน์ is_required ในชีต BorrowItems', null, false);
+  var rowCount = Math.max(table.sheet.getLastRow() - 1, 0);
+  if (!rowCount) return;
+  var values = table.sheet.getRange(2, columnIndex + 1, rowCount, 1).getValues();
+  table.records.forEach(function (record) {
+    if (record.is_required !== '' && record.is_required !== null) return;
+    var required = Object.prototype.hasOwnProperty.call(requiredByItemId, record.item_id)
+      ? requiredByItemId[record.item_id]
+      : true;
+    values[record.__rowNumber - 2][0] = required;
+  });
+  table.sheet.getRange(2, columnIndex + 1, rowCount, 1).setValues(values);
+}
+
+function migrateOperationResultHashesLocked_() {
+  var updates = [];
+  listRecords_(SHEETS.OPERATIONS).forEach(function (operation) {
+    if (operation.status !== OPERATION_STATUS.COMPLETED || operation.result_hash) return;
+    var serialized = String(operation.result_json || '') +
+      String(operation.result_json_2 || '') + String(operation.result_json_3 || '') +
+      String(operation.result_json_4 || '');
+    var result = null;
+    try {
+      result = JSON.parse(serialized);
+    } catch (error) {
+      throw new AppError('SCHEMA_ERROR',
+        'ไม่สามารถย้าย result ของ operation ' + operation.operation_id + ' เพราะ JSON ไม่สมบูรณ์',
+        null, false);
+    }
+    updates.push({
+      id: operation.operation_id,
+      changes: { result_hash: hashOperationPayload_(result) }
+    });
+  });
+  updateRecordsById_(SHEETS.OPERATIONS, 'operation_id', updates);
 }
 
 function assertUniqueRecordFieldLocked_(sheetName, records, fieldName, allowBlank, normalizer) {

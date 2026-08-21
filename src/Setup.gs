@@ -4,28 +4,40 @@
  */
 function setupSystem() {
   return executeSafely_(function () {
-    var config = getRuntimeConfig_();
-    var actorEmail = assertSetupCaller_(config);
     return withScriptLock_(function () {
+      var config = getRuntimeConfig_();
+      var setupAccess = assertSetupCaller_(config);
+      var actorEmail = setupAccess.email;
       var spreadsheet = getSpreadsheet_();
-      var migrationId = '001_initial_schema';
-      var migration = MIGRATION_DEFINITIONS[migrationId];
+      var migrationIds = Object.keys(MIGRATION_DEFINITIONS).sort();
+      var installedMigrations = Object.create(null);
       preflightRecordedMigrationsRaw_(spreadsheet);
       spreadsheet.setSpreadsheetTimeZone(config.TIMEZONE);
       spreadsheet.setSpreadsheetLocale(config.LOCALE);
       ensureAllSheetsLocked_(spreadsheet);
-      preflightMigrationLocked_(migrationId, migration.checksum);
+      migrationIds.forEach(function (migrationId) {
+        installedMigrations[migrationId] = preflightMigrationLocked_(
+          migrationId,
+          MIGRATION_DEFINITIONS[migrationId].checksum
+        );
+      });
+      if (!installedMigrations['002_operation_journal_and_required_items']) {
+        migrateBorrowItemRequiredFlagsLocked_();
+      }
+      if (!installedMigrations['003_operation_result_integrity_and_abort']) {
+        migrateOperationResultHashesLocked_();
+      }
       validateCriticalUniquenessLocked_();
       recoverSequencesLocked_();
       seedSettingsLocked_(actorEmail, config);
       seedDefaultCategoriesLocked_(actorEmail);
-      seedAdminUsersLocked_(actorEmail, config.ADMIN_EMAILS);
-      recordMigrationLocked_(
-        migrationId,
-        migration.description,
-        migration.checksum,
-        actorEmail
-      );
+      if (setupAccess.isBootstrap) {
+        seedAdminUsersLocked_(actorEmail, config.ADMIN_EMAILS);
+      }
+      migrationIds.forEach(function (migrationId) {
+        var migration = MIGRATION_DEFINITIONS[migrationId];
+        recordMigrationLocked_(migrationId, migration.description, migration.checksum, actorEmail);
+      });
       markSetupCompletedLocked_(actorEmail);
       bumpCacheEpoch_();
       var warnings = [];
@@ -44,17 +56,57 @@ function setupSystem() {
 
 function assertSetupCaller_(config) {
   var email = normalizeEmail_(Session.getActiveUser().getEmail());
-  assertApp_(email, 'UNAUTHENTICATED', 'ไม่พบอีเมลผู้ใช้งาน กรุณารัน setup ด้วยบัญชี Google Workspace', null, false);
+  assertApp_(isSafeEmailValue_(email), 'UNAUTHENTICATED',
+    'ไม่พบอีเมลผู้ใช้งาน กรุณารัน setup ด้วยบัญชี Google Workspace', null, false);
+  assertApp_(config.ALLOWED_DOMAIN, 'CONFIG_ERROR',
+    'กรุณาตั้งค่า ALLOWED_DOMAIN ก่อนรัน setup', null, false);
   assertApp_(isEmailInDomain_(email, config.ALLOWED_DOMAIN), 'FORBIDDEN',
     'บัญชีที่รัน setup ไม่อยู่ใน ALLOWED_DOMAIN', null, false);
   var invalidAdmins = config.ADMIN_EMAILS.filter(function (adminEmail) {
-    return !isEmailInDomain_(adminEmail, config.ALLOWED_DOMAIN);
+    return !isSafeEmailValue_(adminEmail) || !isEmailInDomain_(adminEmail, config.ALLOWED_DOMAIN);
   });
   assertApp_(!invalidAdmins.length, 'CONFIG_ERROR',
     'ADMIN_EMAILS มีอีเมลที่อยู่นอก ALLOWED_DOMAIN: ' + invalidAdmins.join(', '), null, false);
-  assertApp_(config.ADMIN_EMAILS.indexOf(email) !== -1, 'FORBIDDEN',
-    'อีเมลที่รัน setup ต้องอยู่ใน ADMIN_EMAILS', null, false);
-  return email;
+  var spreadsheet = getSpreadsheet_();
+  var isBootstrap = !hasCompletedSetupRaw_(spreadsheet);
+  if (isBootstrap) {
+    assertApp_(config.ADMIN_EMAILS.indexOf(email) !== -1, 'FORBIDDEN',
+      'อีเมลที่รัน setup ครั้งแรกต้องอยู่ใน ADMIN_EMAILS', null, false);
+  } else {
+    assertApp_(isActiveAdminRaw_(spreadsheet, email), 'FORBIDDEN',
+      'หลังติดตั้งแล้ว เฉพาะผู้ดูแลระบบที่เปิดใช้งานอยู่เท่านั้นที่รัน setup ได้', null, false);
+  }
+  return { email: email, isBootstrap: isBootstrap };
+}
+
+function hasCompletedSetupRaw_(spreadsheet) {
+  var sheet = spreadsheet.getSheetByName(SHEETS.SETTINGS);
+  if (!sheet || sheet.getLastRow() < 2 || sheet.getLastColumn() < 2) return false;
+  var values = sheet.getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn()).getValues();
+  var headers = values[0].map(normalizeWhitespace_);
+  var keyIndex = headers.indexOf('setting_key');
+  var valueIndex = headers.indexOf('setting_value');
+  if (keyIndex === -1 || valueIndex === -1) return false;
+  return values.slice(1).some(function (row) {
+    return normalizeWhitespace_(row[keyIndex]) === 'setup_completed_at' &&
+      Boolean(normalizeWhitespace_(row[valueIndex]));
+  });
+}
+
+function isActiveAdminRaw_(spreadsheet, email) {
+  var sheet = spreadsheet.getSheetByName(SHEETS.USERS);
+  if (!sheet || sheet.getLastRow() < 2 || sheet.getLastColumn() < 4) return false;
+  var values = sheet.getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn()).getValues();
+  var headers = values[0].map(normalizeWhitespace_);
+  var emailIndex = headers.indexOf('email');
+  var roleIndex = headers.indexOf('role');
+  var statusIndex = headers.indexOf('status');
+  if (emailIndex === -1 || roleIndex === -1 || statusIndex === -1) return false;
+  return values.slice(1).some(function (row) {
+    return normalizeEmail_(row[emailIndex]) === email &&
+      normalizeWhitespace_(row[roleIndex]).toUpperCase() === USER_ROLE.ADMIN &&
+      normalizeWhitespace_(row[statusIndex]).toUpperCase() === RECORD_STATUS.ACTIVE;
+  });
 }
 
 function ensureAllSheetsLocked_(spreadsheet) {

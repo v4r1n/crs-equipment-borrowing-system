@@ -29,7 +29,7 @@ API เปิดเฉพาะ use-case ที่ชัดเจน เช่�
 
 ### Domain services
 
-บริการ Equipment, Borrow, User, Category, Dashboard, Image และ History เป็นเจ้าของ business rules โดยเฉพาะ BorrowService เป็นผู้เดียวที่เปลี่ยนสถานะ workflow ของ Equipment ระหว่าง Pending/Reserved/Borrowed/Returning
+บริการ Equipment, Borrow, User, Category, Dashboard, Image และ History เป็นเจ้าของ business rules โดยเฉพาะ BorrowService เป็นผู้เดียวที่เปลี่ยนสถานะ workflow ของ Equipment ระหว่าง Pending/Reserved/Borrowed/Returning ส่วน OperationService เป็น durable coordinator สำหรับ idempotency และ recovery ของ mutation ข้ามหลายชีต/Google Drive โดยไม่อ้างว่า Sheets มี transaction
 
 ### Repositories
 
@@ -42,14 +42,25 @@ repository อ่าน header และ `getValues()` ครั้งเดี�
 1. ตรวจรูปแบบ payload ที่ไม่ต้องอ่านฐานข้อมูล
 2. ขอ Script Lock พร้อม timeout
 3. resolve actor และ role ใหม่ภายใน lock
-4. อ่านข้อมูลจริงจาก Sheet โดยไม่ใช้ cache
-5. ตรวจ source state, row version, foreign key และ idempotency key
-6. จัดสรร ID จาก Sequences
-7. เขียน domain rows แบบ batch
-8. append History, bump cache epoch และ `SpreadsheetApp.flush()`
-9. ปล่อย lock ใน `finally`
+4. อ่านข้อมูลจริงจาก Sheet โดยไม่ใช้ cache และสร้าง operation specification จาก action, entity/asset, actor และ hash ของ normalized payload
+5. ถ้า operation เดิมเป็น `COMPLETED` และ specification ตรงกัน ให้ verify result hash แล้วคืน stored result โดยไม่ทำ domain mutation ซ้ำ
+6. ถ้าเป็นคำสั่งใหม่ ให้ตรวจ source state, row version, foreign key และห้ามมี `STARTED` operation อื่นที่ชน entity, asset หรือ normalized unique reservation ก่อนเขียน Operations row สถานะ `STARTED` พร้อม payload/hash และ before-state
+7. จัดสรร ID/ผูก entity หรือ external resource เมื่อจำเป็น แล้วเขียนหรือเติมเฉพาะ domain rows ที่ยังอยู่ source state; ถ้าแถวอยู่ exact target state แล้วให้ถือว่า step นั้นสำเร็จจากรอบก่อน
+8. รับรองว่ามี History ตรงกับ `operation_id` เพียงหนึ่งแถว จากนั้น bump cache epoch และ `SpreadsheetApp.flush()` เพื่อยืนยัน domain rows กับ audit ก่อน finalize
+9. serialize result กับ result hash ลง Operations, เปลี่ยนสถานะเป็น `COMPLETED`, flush อีกครั้งเมื่อออกจาก critical section แล้วปล่อย lock ใน `finally`
 
-Google Sheets ไม่มี cross-sheet transaction จริง ระบบจึงให้ Borrow เป็นหลักฐาน active workflow, เขียน History ใน critical section และมี integrity audit สำหรับตรวจความไม่สอดคล้อง
+Google Sheets ไม่มี rollback/cross-sheet transaction จริง ลำดับ `STARTED → domain rows → exactly-one History → flush → result/COMPLETED` จึงทำให้ความคืบหน้าทนต่อ execution ที่หยุดกลางทาง โดย Borrow ยังเป็นหลักฐาน active workflow และ Equipment เป็น projection สำหรับงานปฏิบัติการ
+
+### Retry and reconciliation
+
+- Retry ต้องใช้ command ID, action และ normalized payload เดิม; action/entity/asset/hash ที่ไม่ตรงจะถูกปฏิเสธด้วย conflict และ actor ต้องเป็นเจ้าของเดิม เว้นแต่ admin ทำ controlled reconciliation
+- `COMPLETED` verify hash แล้วคืน stored result เดิม ส่วน `STARTED` verify payload hash, โหลด payload/before-state เดิม และทำต่อเฉพาะ step ที่ขาด
+- การ resume ยอมรับ domain row เฉพาะ exact source หรือ exact target state/row version ที่ operation บันทึกไว้ ถ้ามีการแก้ไขต่อจากนั้นจะ fail closed แทนการเดาผลลัพธ์
+- `STARTED` ของ entity หรือ asset เดียวกันบล็อก command ID อื่นด้วย `OPERATION_PENDING`; asset guard ครอบคลุมคำขอยืมที่ยังไม่มี Borrow ID และ workflow ที่แตะ Equipment เดียวกัน
+- `STARTED` ยังจอง normalized serial number, user email และ category name สำหรับ create/edit ที่เกี่ยวข้อง ปิดช่องให้ command คนละ entity ผ่าน uniqueness preflight พร้อมกันแล้วมาชนกันภายหลัง
+- Image operation เก็บ `resource_id` เพื่อไม่สร้างไฟล์ซ้ำและให้ cleanup เฉพาะไฟล์ใหม่ที่ operation นั้นสร้าง
+- ถ้า image upload หยุดก่อนเปลี่ยน Equipment และไม่สามารถ resume ได้ Admin ยกเลิกแบบมีเหตุผลได้; ระบบพิสูจน์ exact before-state, ห้ามมี History, ย้าย partial Drive file ที่เข้าถึงได้ไป Trash แล้วบันทึกผล hash พร้อมสถานะ `ABORTED` หากโฟลเดอร์เดิมเข้าไม่ได้จะระบุ orphan-cleanup warning ไว้ในผลลัพธ์
+- Integrity audit รายงาน journal ที่ค้างและความไม่สอดคล้อง ผู้ดูแลควร replay คำสั่งเดิมเพื่อ reconcile; กรณี state ไม่ใช่ source/target ที่คาดไว้ต้องใช้การซ่อมแบบตรวจสอบได้ ไม่แก้ Operations/History โดยตรง
 
 ## Performance
 
@@ -67,8 +78,9 @@ Google Sheets ไม่มี cross-sheet transaction จริง ระบบ�
 - ข้อมูล text ถูกจำกัดความยาว ป้องกัน formula injection ก่อนลง Sheet และ escape ก่อนเข้า HTML
 - QR มีไว้ระบุ Asset ID/route เท่านั้น ไม่ให้สิทธิ์และไม่ trigger mutation อัตโนมัติ
 - History ไม่มี update/delete endpoint และ reference records ใช้ inactive/retired แทน delete
+- Operations และ payload/before/result evidence ไม่มี generic browser endpoint; client ได้รับเฉพาะผลลัพธ์ use-case ที่ผ่าน authorization
+- รูปใน Drive รองรับเฉพาะ `DOMAIN_WITH_LINK` หรือ `ANYONE_WITH_LINK`, ตรวจ effective sharing หลังตั้งค่า และเก็บ resource key ใน URL เมื่อ Drive กำหนด; ไม่มีโหมด `PRIVATE` ที่อ้างว่า browser ของผู้ใช้คนอื่นเปิดรูปได้โดยไม่มี delivery proxy
 
 ## Deployment topology
 
 โปรเจกต์ Apps Script แบบ standalone เชื่อม Google Sheet ด้วย ID และ Drive folder ด้วย ID จาก Script Properties deploy เป็น Web app การใช้ deployment เดิมเมื่อลง version ใหม่ช่วยรักษา `/exec` URL ให้ QR sticker เดิมยังใช้ได้
-

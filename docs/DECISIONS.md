@@ -67,3 +67,15 @@ QR encodes a canonical HTTPS equipment-detail URL derived from configured/curren
 Status: Accepted — 2026-08-21
 
 Each migration ID owns a frozen SHA-256 checksum that never depends on the future current schema. Setup validates all already-recorded migrations through a minimal raw read before changing spreadsheet locale, headers, formatting, protection, sequences, or seed data. Future schema changes add a new migration definition instead of changing `001_initial_schema`.
+
+## ADR-012 — Durable operation journal and resumable mutations
+
+Status: Accepted — 2026-08-21
+
+Google Sheets cannot atomically commit several domain rows, History, and a Google Drive resource. Every command-backed state-changing RPC (and deterministic auto-provision command) therefore owns one Operations row keyed by its idempotency key. The success protocol is `STARTED → domain rows → exactly-one History → flush → stored result/COMPLETED`; the journal retains normalized action/entity/asset, original actor/time, hashed replay payload, authoritative before-state, optional external resource ID, and a hashed client result. Payload and result hashes are verified before replay.
+
+A retry with the same specification returns the stored completed result or resumes a started operation only when affected rows still match the recorded source or exact expected target state/version. A different started command for the same entity or asset is rejected with `OPERATION_PENDING`, including asset-first create flows whose entity ID is not allocated yet. Started payloads also reserve normalized serial numbers, user emails, and category names across relevant mutations so cross-entity uniqueness cannot race. Diverged state fails closed for audited reconciliation rather than guessing or repeating writes.
+
+Image upload additionally permits guarded terminal `ABORTED` only while Equipment remains at exact before-state and no matching History exists. Reachable partial image files are moved to Trash and an inaccessible pinned folder produces explicit orphan-cleanup evidence. This releases an otherwise permanent asset reservation without pretending a domain mutation succeeded; the old command ID remains terminal.
+
+This adds storage and recovery complexity, and payload/result text must be split into bounded Sheet cells, but it closes the crash window where domain rows could persist without History or a stable retry result. Operations has no generic CRUD endpoint and is retained as evidence; it is not a replacement for History or for the Borrow source-of-truth model.

@@ -34,7 +34,7 @@ function readTable_(sheetName) {
     });
     records.push(record);
   }
-  return { sheet: sheet, headers: headers, records: records, lastRow: lastRow };
+  return { sheet: sheet, headers: headers, records: records, lastRow: lastRow, values: values };
 }
 
 function listRecords_(sheetName) {
@@ -142,21 +142,120 @@ function updateRecordById_(sheetName, idField, idValue, changes) {
   }).sort(function (left, right) {
     return left.index - right.index;
   });
-  var groups = [];
-  columns.forEach(function (column) {
-    var group = groups.length ? groups[groups.length - 1] : null;
-    if (!group || column.index !== group[group.length - 1].index + 1) {
-      group = [];
-      groups.push(group);
+  if (columns.length) {
+    var firstColumn = columns[0].index;
+    var lastChangedColumn = columns[columns.length - 1].index;
+    var width = lastChangedColumn - firstColumn + 1;
+    var range = table.sheet.getRange(current.__rowNumber, firstColumn + 1, 1, width);
+    var row = table.values[current.__rowNumber - 1].slice(firstColumn, lastChangedColumn + 1);
+    if (typeof range.getFormulas === 'function') {
+      var formulas = range.getFormulas()[0];
+      formulas.forEach(function (formula, index) {
+        if (formula) row[index] = formula;
+      });
     }
-    group.push(column);
-  });
-  groups.forEach(function (group) {
-    table.sheet
-      .getRange(current.__rowNumber, group[0].index + 1, 1, group.length)
-      .setValues([group.map(function (column) { return column.value; })]);
-  });
+    columns.forEach(function (column) {
+      row[column.index - firstColumn] = column.value;
+    });
+    range.setValues([row]);
+  }
   return mergeObjects_(updated, { __rowNumber: current.__rowNumber });
+}
+
+function updateRecordsById_(sheetName, idField, updates) {
+  if (!updates || !updates.length) return [];
+  var table = readTable_(sheetName);
+  assertApp_(SHEET_PRIMARY_KEYS[sheetName] === idField, 'SCHEMA_ERROR',
+    'ต้องแก้ไขชีต ' + sheetName + ' ผ่านรหัสหลัก ' + SHEET_PRIMARY_KEYS[sheetName], null, false);
+  assertApp_(table.headers.indexOf(idField) !== -1, 'SCHEMA_ERROR',
+    'ไม่พบคอลัมน์รหัสหลัก ' + idField + ' ในชีต ' + sheetName, null, false);
+  var recordsById = Object.create(null);
+  table.records.forEach(function (record) {
+    var key = String(record[idField]);
+    assertApp_(!recordsById[key], 'SCHEMA_ERROR',
+      'พบรหัสหลักซ้ำในชีต ' + sheetName + ': ' + key, null, false);
+    recordsById[key] = record;
+  });
+  var seenUpdates = Object.create(null);
+  var plans = [];
+  var results = Object.create(null);
+  updates.forEach(function (update) {
+    update = update || {};
+    var key = String(update.id);
+    assertApp_(!seenUpdates[key], 'VALIDATION_FAILED',
+      'พบรายการแก้ไขรหัสซ้ำ: ' + key, null, false);
+    seenUpdates[key] = true;
+    var current = recordsById[key];
+    assertApp_(current, 'NOT_FOUND', 'ไม่พบข้อมูลที่ต้องการแก้ไข', null, false);
+    var changes = update.changes || {};
+    assertKnownRecordFields_(table.headers, changes, sheetName);
+    if (Object.prototype.hasOwnProperty.call(changes, idField)) {
+      assertApp_(String(changes[idField]) === String(current[idField]), 'VALIDATION_FAILED',
+        'ไม่สามารถเปลี่ยนรหัสหลักของข้อมูลได้', null, false);
+    }
+    var columns = Object.keys(changes).filter(function (fieldName) {
+      if (fieldName === idField || fieldName === '__rowNumber') return false;
+      var target = changes[fieldName] === undefined || changes[fieldName] === null
+        ? ''
+        : changes[fieldName];
+      return stableJson_(toSerializable_(current[fieldName])) !==
+        stableJson_(toSerializable_(target));
+    }).map(function (fieldName) {
+      return {
+        index: table.headers.indexOf(fieldName),
+        value: changes[fieldName] === undefined || changes[fieldName] === null
+          ? ''
+          : changes[fieldName]
+      };
+    });
+    results[key] = mergeObjects_(mergeObjects_(current, changes), {
+      __rowNumber: current.__rowNumber
+    });
+    if (columns.length) {
+      plans.push({ rowNumber: current.__rowNumber, columns: columns });
+    }
+  });
+  if (plans.length) {
+    plans.sort(function (left, right) { return left.rowNumber - right.rowNumber; });
+    var firstColumn = plans.reduce(function (minimum, plan) {
+      return Math.min(minimum, plan.columns.reduce(function (columnMinimum, column) {
+        return Math.min(columnMinimum, column.index);
+      }, table.headers.length));
+    }, table.headers.length);
+    var lastColumn = plans.reduce(function (maximum, plan) {
+      return Math.max(maximum, plan.columns.reduce(function (columnMaximum, column) {
+        return Math.max(columnMaximum, column.index);
+      }, -1));
+    }, -1);
+    var groups = [];
+    plans.forEach(function (plan) {
+      var group = groups[groups.length - 1];
+      if (!group || plan.rowNumber !== group[group.length - 1].rowNumber + 1) {
+        group = [];
+        groups.push(group);
+      }
+      group.push(plan);
+    });
+    groups.forEach(function (group) {
+      var width = lastColumn - firstColumn + 1;
+      var range = table.sheet.getRange(group[0].rowNumber, firstColumn + 1, group.length, width);
+      var formulas = typeof range.getFormulas === 'function' ? range.getFormulas() : [];
+      var rows = group.map(function (plan, rowIndex) {
+        var row = table.values[plan.rowNumber - 1].slice(firstColumn, lastColumn + 1);
+        if (formulas[rowIndex]) {
+          formulas[rowIndex].forEach(function (formula, columnIndex) {
+            if (formula) row[columnIndex] = formula;
+          });
+        }
+        plan.columns.forEach(function (column) {
+          row[column.index - firstColumn] = column.value;
+        });
+        return row;
+      });
+      range.setValues(rows);
+    });
+  }
+  return updates.map(function (update) { return results[String(update.id)]; });
 }
 
 function upsertRecordByField_(sheetName, fieldName, fieldValue, record) {
@@ -228,9 +327,9 @@ function bumpCacheEpoch_() {
   return String(next);
 }
 
-function cacheGetJson_(key) {
+function cacheGetJson_(key, epoch) {
   try {
-    var cacheKey = getCacheEpoch_() + ':' + String(key);
+    var cacheKey = String(epoch || getCacheEpoch_()) + ':' + String(key);
     if (cacheKey.length > 240) return null;
     var value = CacheService.getScriptCache().get(cacheKey);
     if (!value) return null;
@@ -241,9 +340,9 @@ function cacheGetJson_(key) {
   }
 }
 
-function cachePutJson_(key, value, ttlSeconds) {
+function cachePutJson_(key, value, ttlSeconds, epoch) {
   try {
-    var cacheKey = getCacheEpoch_() + ':' + String(key);
+    var cacheKey = String(epoch || getCacheEpoch_()) + ':' + String(key);
     var serialized = JSON.stringify(toSerializable_(value));
     if (cacheKey.length > 240 || serialized.length > 90000) return false;
     CacheService.getScriptCache().put(

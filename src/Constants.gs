@@ -6,6 +6,7 @@ var SHEETS = Object.freeze({
   INCLUDED_ITEMS: 'IncludedItems',
   BORROW_ITEMS: 'BorrowItems',
   HISTORY: 'History',
+  OPERATIONS: 'Operations',
   SETTINGS: 'Settings',
   SEQUENCES: 'Sequences',
   SCHEMA_MIGRATIONS: 'SchemaMigrations'
@@ -76,5 +77,9 @@ var SEQUENCE_DEFINITIONS = Object.freeze({
 });
 
 var CACHE_KEYS = Object.freeze({ EPOCH: 'cache_epoch' });
-var CURRENT_SCHEMA_VERSION = '1';
-
+var OPERATION_STATUS = Object.freeze({
+  STARTED: 'STARTED',
+  COMPLETED: 'COMPLETED',
+  ABORTED: 'ABORTED'
+});
+var CURRENT_SCHEMA_VERSION = '3';

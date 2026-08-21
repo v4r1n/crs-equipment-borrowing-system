@@ -27,7 +27,7 @@ function requireEnum_(value, allowedValues, fieldName, label) {
 
 function requireEmail_(value, fieldName) {
   var email = normalizeEmail_(value);
-  assertApp_(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), 'VALIDATION_FAILED', 'อีเมลไม่ถูกต้อง', {
+  assertApp_(isSafeEmailValue_(email), 'VALIDATION_FAILED', 'อีเมลไม่ถูกต้อง', {
     fieldErrors: fieldError_(fieldName || 'email', 'กรุณาระบุอีเมลที่ถูกต้อง')
   });
   return email;
@@ -67,4 +67,3 @@ function validateBorrowDates_(borrowDate, dueDate) {
   });
   return { borrowDate: start, dueDate: end };
 }
-

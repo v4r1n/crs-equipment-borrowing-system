@@ -10,6 +10,12 @@ function normalizeEmail_(value) {
   return normalizeWhitespace_(value).toLowerCase();
 }
 
+function isSafeEmailValue_(value) {
+  var email = normalizeEmail_(value);
+  return email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) &&
+    !/^[=+\-@]/.test(email);
+}
+
 function normalizeDomain_(value) {
   return normalizeWhitespace_(value).replace(/^@/, '').toLowerCase();
 }
