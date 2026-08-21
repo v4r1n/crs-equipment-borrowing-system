@@ -59,5 +59,4 @@ Complete this checklist at the end of every phase:
 
 ## Current delivery status
 
-Phase 1 architecture is complete. Resume from the phase recorded in `docs/MEMORY.md`.
-
+Phases 1–2 are complete. Resume from the phase recorded in `docs/MEMORY.md`.

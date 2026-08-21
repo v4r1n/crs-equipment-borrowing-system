@@ -11,7 +11,7 @@
 - Child collections use separate sheets/tables rather than comma-separated values.
 - Business dates and UTC instants have explicit formats.
 - Status values and transition rules are centralized, not inferred from display labels.
-- User/category/asset names required in historical reports are snapshotted on Borrow/History.
+- User and asset labels required in historical reports are snapshotted on Borrow; History stores the entity ID and changed-field snapshot.
 - Schema changes are additive, ordered, and recorded in SchemaMigrations.
 
 ## Relational mapping
@@ -39,4 +39,3 @@ Each Sheet maps one-to-one to a table: `Equipment -> equipment`, `Users -> users
 ## Compatibility policy
 
 Never change a canonical status value, ID, or API field silently. Introduce a schema migration and compatibility translation, document it in `docs/CHANGELOG.md`, then remove the translation only in a SemVer-major release.
-

@@ -1,0 +1,80 @@
+var SHEETS = Object.freeze({
+  EQUIPMENT: 'Equipment',
+  USERS: 'Users',
+  BORROW: 'Borrow',
+  CATEGORIES: 'Categories',
+  INCLUDED_ITEMS: 'IncludedItems',
+  BORROW_ITEMS: 'BorrowItems',
+  HISTORY: 'History',
+  SETTINGS: 'Settings',
+  SEQUENCES: 'Sequences',
+  SCHEMA_MIGRATIONS: 'SchemaMigrations'
+});
+
+var EQUIPMENT_STATUS = Object.freeze({
+  AVAILABLE: 'AVAILABLE',
+  PENDING: 'PENDING',
+  RESERVED: 'RESERVED',
+  BORROWED: 'BORROWED',
+  RETURNING: 'RETURNING',
+  MAINTENANCE: 'MAINTENANCE',
+  DAMAGED: 'DAMAGED',
+  LOST: 'LOST',
+  RETIRED: 'RETIRED'
+});
+
+var BORROW_STATUS = Object.freeze({
+  PENDING_APPROVAL: 'PENDING_APPROVAL',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+  CHECKED_OUT: 'CHECKED_OUT',
+  RETURN_REQUESTED: 'RETURN_REQUESTED',
+  RETURNED: 'RETURNED',
+  CANCELLED: 'CANCELLED'
+});
+
+var USER_ROLE = Object.freeze({ USER: 'USER', ADMIN: 'ADMIN' });
+var RECORD_STATUS = Object.freeze({ ACTIVE: 'ACTIVE', INACTIVE: 'INACTIVE' });
+
+var RETURN_CONDITION = Object.freeze({
+  NORMAL: 'NORMAL',
+  COSMETIC_DAMAGE: 'COSMETIC_DAMAGE',
+  DAMAGED: 'DAMAGED',
+  MISSING_ITEMS: 'MISSING_ITEMS',
+  LOST: 'LOST'
+});
+
+var RETURN_DISPOSITION = Object.freeze({
+  AVAILABLE: EQUIPMENT_STATUS.AVAILABLE,
+  DAMAGED: EQUIPMENT_STATUS.DAMAGED,
+  MAINTENANCE: EQUIPMENT_STATUS.MAINTENANCE,
+  LOST: EQUIPMENT_STATUS.LOST
+});
+
+var ACTIVE_BORROW_STATUSES = Object.freeze([
+  BORROW_STATUS.PENDING_APPROVAL,
+  BORROW_STATUS.APPROVED,
+  BORROW_STATUS.CHECKED_OUT,
+  BORROW_STATUS.RETURN_REQUESTED
+]);
+
+var WORKFLOW_EQUIPMENT_STATUSES = Object.freeze([
+  EQUIPMENT_STATUS.PENDING,
+  EQUIPMENT_STATUS.RESERVED,
+  EQUIPMENT_STATUS.BORROWED,
+  EQUIPMENT_STATUS.RETURNING
+]);
+
+var SEQUENCE_DEFINITIONS = Object.freeze({
+  ASSET: { prefix: 'AST-', padding: 6, sheet: SHEETS.EQUIPMENT, idField: 'asset_id' },
+  BORROW: { prefix: 'BR-', padding: 6, sheet: SHEETS.BORROW, idField: 'borrow_id' },
+  USER: { prefix: 'USR-', padding: 6, sheet: SHEETS.USERS, idField: 'user_id' },
+  CATEGORY: { prefix: 'CAT-', padding: 3, sheet: SHEETS.CATEGORIES, idField: 'category_id' },
+  ITEM: { prefix: 'ITM-', padding: 6, sheet: SHEETS.INCLUDED_ITEMS, idField: 'item_id' },
+  BORROW_ITEM: { prefix: 'BIT-', padding: 6, sheet: SHEETS.BORROW_ITEMS, idField: 'borrow_item_id' },
+  LOG: { prefix: 'LOG-', padding: 6, sheet: SHEETS.HISTORY, idField: 'log_id' }
+});
+
+var CACHE_KEYS = Object.freeze({ EPOCH: 'cache_epoch' });
+var CURRENT_SCHEMA_VERSION = '1';
+

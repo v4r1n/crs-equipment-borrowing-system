@@ -7,7 +7,8 @@ Last updated: 2026-08-21
 - Active branch: `codex/initial-v1`
 - Current version: `0.1.0` under development
 - Completed: Phase 1 — architecture, schema, workflow, project rules, migration direction
-- Next: Phase 2 — Apps Script manifest/config, schema setup, sequences, repositories, utilities, validation, migrations
+- Completed: Phase 2 — manifest/config, schema setup, immutable migration ledger, sequences, repositories, utilities, validation, cache helpers
+- Next: Phase 3 — authentication, guarded API, equipment/borrow/user/category/history/dashboard/image services
 
 ## Frozen contracts
 
@@ -29,3 +30,11 @@ Last updated: 2026-08-21
 - Resolved quantity, overdue, return/maintenance, user return notification, future booking, QR stability, and serial uniqueness ambiguities.
 - Confirmed remote repository initially contains only `LICENSE`; feature branch was created from `main`.
 
+## Phase 2 verification
+
+- Combined Apps Script source passes Node.js syntax checking; `appsscript.json` parses as valid JSON.
+- Pure contract checks pass for leap/invalid dates, due-date ordering, overdue boundary, formula escaping, domain matching, QR URL construction, and sequence-to-schema mappings.
+- In-memory Apps Script review verified first setup and rerun idempotency: 10 sheets, 13 categories, 7 sequences, 1 admin, 4 settings, and 1 migration.
+- Verified automatic grid expansion past 26 columns and 1,000 rows, existing-user admin promotion, partial updates preserving untouched Date/formula cells, immutable primary keys, unknown-field rejection, cache fallback, and pagination clamping.
+- Verified the immutable migration `001_initial_schema` SHA-256 checksum against its frozen V1 schema material.
+- Live Google deployment checks remain for Phase 7 because deployer-owned Spreadsheet/Drive IDs are intentionally not stored in source.

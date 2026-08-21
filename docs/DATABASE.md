@@ -30,9 +30,9 @@ Email is unique and lowercase. Role is `USER|ADMIN`; status is `ACTIVE|INACTIVE`
 
 Primary key: `borrow_id`. Headers:
 
-`borrow_id, client_request_id, user_id, user_email, user_name, user_department, asset_id, borrow_date, due_date, purpose, status, requested_at, approved_by, approved_at, rejected_by, rejected_at, rejection_reason, checkout_by, checkout_at, return_requested_by, return_requested_at, returned_by, return_at, return_condition, return_disposition, return_note, note, created_at, updated_at, row_version`
+`borrow_id, client_request_id, user_id, user_email, user_name, user_department, asset_id, asset_name, asset_sku, borrow_date, due_date, purpose, status, requested_at, approved_by, approved_at, rejected_by, rejected_at, rejection_reason, checkout_by, checkout_at, return_requested_by, return_requested_at, returned_by, return_at, return_condition, return_disposition, return_note, note, created_at, updated_at, row_version`
 
-`client_request_id` makes request retries idempotent. Overdue is derived when local today is later than `due_date` and status is `CHECKED_OUT` or `RETURN_REQUESTED`.
+`client_request_id` makes request retries idempotent. Asset name/SKU and user fields are snapshots for stable history. Overdue is derived when local today is later than `due_date` and status is `CHECKED_OUT` or `RETURN_REQUESTED`.
 
 ### Categories
 
@@ -105,4 +105,3 @@ Records ordered, additive, idempotent schema changes.
 ## Direct Sheet editing
 
 Transaction sheets are a protected datastore. Direct changes bypass validation, authorization, locking, and history; routine administration must use the web UI. Controlled edits to initial configuration/reference data are permitted only during setup and must be followed by the integrity audit.
-

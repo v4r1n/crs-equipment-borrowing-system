@@ -62,3 +62,8 @@ Status: Accepted — 2026-08-21
 
 QR encodes a canonical HTTPS equipment-detail URL derived from configured/current `/exec` base plus Asset ID. The `qr_url` column is a refreshable cache only. Reusing the same Apps Script deployment keeps printed stickers valid.
 
+## ADR-011 — Immutable, additive schema migrations
+
+Status: Accepted — 2026-08-21
+
+Each migration ID owns a frozen SHA-256 checksum that never depends on the future current schema. Setup validates all already-recorded migrations through a minimal raw read before changing spreadsheet locale, headers, formatting, protection, sequences, or seed data. Future schema changes add a new migration definition instead of changing `001_initial_schema`.
