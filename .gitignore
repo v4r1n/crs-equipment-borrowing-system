@@ -1,0 +1,11 @@
+.clasp.json
+.clasprc.json
+.env
+*.log
+node_modules/
+coverage/
+playwright-report/
+test-results/
+.DS_Store
+Thumbs.db
+
