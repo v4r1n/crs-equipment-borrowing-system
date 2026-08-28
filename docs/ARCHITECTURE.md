@@ -25,6 +25,8 @@ flowchart LR
 
 ทุก server call ผ่าน Promise wrapper ของ `google.script.run` และแปล envelope/error เป็น client error แบบเดียว ส่วน mutation สร้าง command ID ก่อนส่งและเก็บใน `sessionStorage` พร้อม fingerprint ของ payload เพื่อให้ retry หลังผลลัพธ์ไม่แน่ชัดใช้คำสั่งเดิมเท่านั้น ทุก action มี loading, success/error ภาษาไทย, field feedback และ confirmation ตามความเสี่ยง
 
+QR controller สร้างสัญลักษณ์และสติกเกอร์ PNG ใน browser จาก canonical asset URL โดยใช้ vendored `qrcode-generator` และอ่าน QR จากไฟล์/ภาพที่ผู้ใช้เลือกด้วย vendored `html5-qrcode` เท่านั้น รูปไม่ออกจาก browser และ decoded payload ต้องผ่าน exact HTTPS application path, route, query และ Asset ID allowlist ก่อนเรียก SPA navigation. HTML Service จำกัด `getUserMedia()` จึงไม่เปิด live camera stream; mobile ใช้ native camera/file picker ผ่าน input `capture="environment"` และยังมี Asset ID manual fallback.
+
 ### API and authorization
 
 API เปิดเฉพาะ use-case ที่ชัดเจน เช่น `listEquipment`, `createBorrowRequest`, `adminApproveBorrow` และ `adminCompleteReturn` ไม่เปิด generic Sheet CRUD ทุก public wrapper resolve ผู้ใช้จาก session, ตรวจสถานะ user และตรวจ role ฝั่ง server ก่อนทำงาน
@@ -79,6 +81,7 @@ Google Sheets ไม่มี rollback/cross-sheet transaction จริง ล�
 - user อ่าน Borrow ของตนเองเท่านั้น; admin อ่านและ mutate ข้อมูลส่วนกลางตาม action ที่อนุญาต
 - ข้อมูล text ถูกจำกัดความยาว ป้องกัน formula injection ก่อนลง Sheet และ escape ก่อนเข้า HTML
 - QR มีไว้ระบุ Asset ID/route เท่านั้น ไม่ให้สิทธิ์และไม่ trigger mutation อัตโนมัติ
+- QR scanner ไม่ตาม decoded URL โดยตรงและไม่ render payload เป็น HTML; external origins, duplicate/conflicting IDs และ query ที่ไม่รู้จักถูกปฏิเสธ
 - History ไม่มี update/delete endpoint และ reference records ใช้ inactive/retired แทน delete
 - Operations และ payload/before/result evidence ไม่มี generic browser endpoint; client ได้รับเฉพาะผลลัพธ์ use-case ที่ผ่าน authorization
 - รูปใน Drive รองรับเฉพาะ `DOMAIN_WITH_LINK` หรือ `ANYONE_WITH_LINK`, ตรวจ effective sharing หลังตั้งค่า และเก็บ resource key ใน URL เมื่อ Drive กำหนด; ไม่มีโหมด `PRIVATE` ที่อ้างว่า browser ของผู้ใช้คนอื่นเปิดรูปได้โดยไม่มี delivery proxy

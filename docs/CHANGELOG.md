@@ -31,6 +31,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Searchable, filterable, sortable, paginated equipment catalog with card/table modes, detail view, included items, and admin equipment editor, status, and Drive-image workflows.
 - Borrow request, My Borrow, personal history, return-request, account, and complete admin-center screens for borrowing, assets, users, categories, history, integrity audit, and durable operation recovery.
 - Promise-based client API for all 32 guarded RPCs, SPA history/deep links, optimistic row versions, field-level Thai errors, and session-backed stable command IDs for uncertain retries.
+- Vendored, checksummed `qrcode-generator` 2.0.4 and `html5-qrcode` 2.3.8 distributions with license and third-party notices.
+- Equipment QR display, canonical-link copy, and high-resolution PNG sticker download with level-Q correction and a four-module quiet zone.
+- Mobile-first QR image capture/file scanning, strict canonical payload validation, manual Asset ID fallback, route cleanup, and exact-asset Admin borrowing handoff.
 
 ### Changed
 
@@ -46,5 +49,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Redact procurement, Drive file, active-workflow, and staff audit fields from non-admin equipment/borrowing responses.
 - Escape dynamic client markup, allowlist routes/includes and Drive thumbnail URLs, gate admin routes in the client, and re-authorize every admin operation on the server.
 - Prevent an active admin from changing the email of their own signed-in Users row, avoiding identity orphaning; another admin may perform the controlled change.
+- Keep scan images local, reject external/malformed/ambiguous QR payloads, and avoid permission-sensitive live-camera APIs inside the Apps Script HTML-service sandbox.
 
 [Unreleased]: https://github.com/v4r1n/crs-equipment-borrowing-system/compare/main...codex/initial-v1

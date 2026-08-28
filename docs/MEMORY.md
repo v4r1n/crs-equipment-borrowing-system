@@ -1,6 +1,6 @@
 # Project Memory
 
-Last updated: 2026-08-27
+Last updated: 2026-08-28
 
 ## Current state
 
@@ -10,7 +10,8 @@ Last updated: 2026-08-27
 - Completed: Phase 2 — manifest/config, schema setup, immutable migration ledger, sequences, repositories, utilities, validation, cache helpers
 - Completed: Phase 3 — Workspace authentication, guarded RPCs, domain services, durable operation recovery, Drive images, integrity audit, and schema v3 migrations
 - Completed: Phase 4 — responsive Thai SPA shell, navigation, dashboards, equipment/borrowing/admin screens, forms, state handling, and client RPC integration
-- Next: Phase 5 — QR generation, asset-link display/download, deep-link handling, and camera scanner
+- Completed: Phase 5 — canonical QR generation/display, PNG sticker download, image-capture/file scanning, strict payload validation, and Admin exact-asset handoff
+- Next: Phase 6 — automated contract tests and end-to-end workflow/responsive acceptance
 
 ## Frozen contracts
 
@@ -59,3 +60,13 @@ Last updated: 2026-08-27
 - Read-only frontend review closed deep-link filter gaps, stale category options, an invalid catalog pagination structure, exact Asset/Borrow ID validation, dashboard admin routing/latest-borrow selection, route-selector hardening, and the signed-in admin email orphaning case. The email rule is also enforced in `UserService.gs`, not only by a read-only field.
 - HTML structure checks found no duplicate static IDs, unbalanced tags/CSS braces, mojibake, inline event-handler attributes, `javascript:` URLs, or unfinished runtime markers.
 - Live responsive layout, `google.script.run`, Workspace session behavior, and browser accessibility acceptance remain for Phase 7 because the deployment configuration and accounts are deployer-owned.
+
+## Phase 5 verification
+
+- QR libraries are pinned and vendored from official packages: `qrcode-generator` 2.0.4 and `html5-qrcode` 2.3.8. Distribution SHA-256 values and complete MIT/Apache-2.0 licenses are recorded in `docs/THIRD_PARTY_NOTICES.md`.
+- QR output derives only from `bootstrap.app.webAppUrl` plus an exact `AST-000001` identifier, uses level-Q correction, integer-pixel modules, a four-module quiet zone, and a high-resolution sticker PNG.
+- Scan input accepts PNG/JPEG/WebP up to 10 MB, performs local `scanFile()` decoding, rejects unknown origins/paths/routes/query keys/duplicate IDs, and never calls live-camera APIs. Manual Asset ID remains available.
+- Valid admin scan follow-up uses the existing exact `assetId` server filter and confirmation-based borrow workflow rather than mutating from decoded content.
+- QR contract checks pass 5 valid and 22 hostile payload cases, including inherited `Object.prototype` query-key names; server web-app URL normalization passes 14 HTTPS/malformed/credential/port cases, and the generated canonical URL produces a valid 49-by-49 level-Q matrix.
+- Final static integration checks pass all 23 individual and combined `.gs` sources, nine browser scripts, 18 allowlisted includes, nine registered routes, 321 unique literal markup IDs, `appsscript.json`, vendor checksums, `git diff --check`, and the no-live-camera-call contract outside vendored code.
+- Live mobile file-picker/camera capture, physical sticker scanning, browser download/clipboard behavior, and deployed HTML-service acceptance remain for Phase 6/7.

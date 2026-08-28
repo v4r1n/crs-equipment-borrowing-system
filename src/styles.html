@@ -76,6 +76,17 @@
     outline-offset: 2px;
   }
 
+  #scan-image-input:focus-visible + .scan-image-label {
+    outline: 3px solid rgba(21, 94, 117, 0.32);
+    outline-offset: 2px;
+    box-shadow: var(--crs-focus);
+  }
+
+  .scan-image-label[aria-disabled="true"] {
+    pointer-events: none;
+    opacity: 0.65;
+  }
+
   .skip-link {
     position: fixed;
     top: 0.75rem;
@@ -1269,6 +1280,34 @@
       animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
     }
+  }
+
+  #page-scan {
+    max-width: 42rem;
+  }
+
+  .scan-hero-icon {
+    display: inline-grid;
+    width: 4.5rem;
+    height: 4.5rem;
+    place-items: center;
+    border-radius: 1.25rem;
+    background: var(--crs-primary-soft);
+    color: var(--crs-primary);
+    font-size: 2.25rem;
+  }
+
+  .scan-reader:empty {
+    display: none;
+  }
+
+  .equipment-qr-canvas {
+    display: block;
+    width: min(100%, 18rem);
+    height: auto;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.75rem;
+    background: #fff;
   }
 
   @media print {

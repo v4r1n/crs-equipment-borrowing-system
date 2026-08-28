@@ -127,8 +127,11 @@
 
   function borrowQueryFromForm(context) {
     var data = formData(CRS.$('#form-admin-borrow-filter', context.page));
+    var search = value(data.get('search')).trim();
+    var exactAssetId = value(context.query.borrow.assetId).toUpperCase();
     return Object.assign({}, context.query.borrow, {
-      search: value(data.get('search')).trim(),
+      search: search,
+      assetId: search.toUpperCase() === exactAssetId ? exactAssetId : '',
       status: value(data.get('status')).trim().toUpperCase(),
       sortBy: value(data.get('sortBy') || 'requested_at'),
       sortDirection: value(data.get('sortDirection') || 'desc'),
@@ -236,7 +239,8 @@
     context.query.borrow.page = Number(result.page || 1);
     CRS.$('#table-body-admin-borrow', context.page).innerHTML = items.map(borrowRow).join('');
     CRS.setText(CRS.$('#admin-borrow-results-summary', context.page),
-      'พบ ' + Number(result.total || 0).toLocaleString('th-TH') + ' รายการ');
+      'พบ ' + Number(result.total || 0).toLocaleString('th-TH') + ' รายการ' +
+      (context.query.borrow.assetId ? ' สำหรับ ' + context.query.borrow.assetId : ''));
     CRS.$('#pagination-admin-borrow', context.page).innerHTML = pagination(result, 'admin-borrow-page');
     syncBorrowQuickFilters(context);
     setListState(context, 'borrow', items.length ? 'content' : 'empty');
@@ -1262,6 +1266,8 @@
     var pageSize = defaultPageSize();
     var selectedTab = initialTab(params);
     var deepSearch = value(params.search).trim();
+    var exactBorrowAssetId = /^AST-\d{6}$/.test(value(params.assetId || params.asset_id).trim().toUpperCase())
+      ? value(params.assetId || params.asset_id).trim().toUpperCase() : '';
     var explicitBorrowStatus = selectedTab === 'borrowing' &&
       Object.prototype.hasOwnProperty.call(params, 'status');
     var context = {
@@ -1271,7 +1277,8 @@
       requests: { borrow: 0, users: 0, categories: 0, history: 0, operations: 0,
         operationDetail: 0, summary: 0 },
       query: {
-        borrow: { search: selectedTab === 'borrowing' ? deepSearch : '',
+        borrow: { search: selectedTab === 'borrowing' ? (deepSearch || exactBorrowAssetId) : '',
+          assetId: selectedTab === 'borrowing' ? exactBorrowAssetId : '',
           status: value(explicitBorrowStatus ? params.status : 'PENDING_APPROVAL').trim().toUpperCase(),
           sortBy: 'requested_at', sortDirection: 'desc', page: 1, pageSize: pageSize },
         users: { search: selectedTab === 'users' ? deepSearch : '',

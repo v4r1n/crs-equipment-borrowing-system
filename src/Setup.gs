@@ -43,7 +43,9 @@ function setupSystem() {
       var warnings = [];
       if (!config.DRIVE_FOLDER_ID) warnings.push('ยังไม่ได้ตั้งค่า DRIVE_FOLDER_ID; การอัปโหลดรูปจะยังใช้งานไม่ได้');
       if (!config.ALLOWED_DOMAIN) warnings.push('ควรตั้งค่า ALLOWED_DOMAIN และจำกัด Web app ให้ใช้ภายใน Workspace domain');
-      if (!config.WEB_APP_URL) warnings.push('หลัง deploy ให้ตั้ง WEB_APP_URL หรือรัน refresh QR URL');
+      if (!getWebAppBaseUrl_()) {
+        warnings.push('ยังไม่พบ Web app URL แบบ HTTPS; หลัง deploy ให้ทดสอบ QR Code และตั้ง WEB_APP_URL หากระบบตรวจอัตโนมัติไม่ได้');
+      }
       return {
         message: 'ตั้งค่าระบบเรียบร้อยแล้ว',
         spreadsheetId: spreadsheet.getId(),

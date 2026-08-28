@@ -1,0 +1,49 @@
+<template id="view-scan-template">
+  <section id="page-scan" class="app-page mx-auto" data-page="scan" aria-labelledby="scan-title">
+    <header class="text-center mb-4">
+      <span class="scan-hero-icon" aria-hidden="true"><i class="bi bi-qr-code-scan"></i></span>
+      <p class="eyebrow mt-3 mb-1">ค้นหาอุปกรณ์จากสติกเกอร์</p>
+      <h1 id="scan-title" class="h3 mb-2">สแกน QR Code</h1>
+      <p class="text-body-secondary mb-0">ถ่ายภาพหรือเลือกรูป QR แล้วระบบจะเปิดรายละเอียดอุปกรณ์ให้อัตโนมัติ</p>
+    </header>
+
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-body p-4">
+        <div class="alert alert-info d-flex gap-3" role="note">
+          <i class="bi bi-shield-check flex-shrink-0" aria-hidden="true"></i>
+          <div class="small">รูปภาพถูกอ่านในอุปกรณ์นี้เท่านั้นและไม่ถูกส่งไปเก็บบนเซิร์ฟเวอร์</div>
+        </div>
+        <input id="scan-image-input" class="visually-hidden" type="file"
+               accept="image/png,image/jpeg,image/webp" capture="environment">
+        <label id="scan-image-label" class="btn btn-primary btn-lg w-100 scan-image-label"
+               for="scan-image-input" aria-disabled="false">
+          <i class="bi bi-camera me-2" aria-hidden="true"></i>ถ่ายรูปหรือเลือกรูป QR
+        </label>
+        <p class="form-text text-center mt-2 mb-0">รองรับ PNG, JPEG และ WebP ขนาดไม่เกิน 10 MB</p>
+
+        <div id="scan-progress" class="text-center py-4" role="status" aria-live="polite" hidden>
+          <span class="spinner-border text-primary" aria-hidden="true"></span>
+          <p class="mb-0 mt-3">กำลังอ่าน QR Code…</p>
+        </div>
+        <div id="scan-reader" class="scan-reader mt-3" aria-hidden="true"></div>
+        <div id="scan-error" class="alert alert-warning mt-3 mb-0" role="alert" aria-live="assertive" hidden></div>
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-4">
+        <h2 class="h5">หรือกรอก Asset ID</h2>
+        <form id="asset-id-entry-form" novalidate>
+          <label class="form-label" for="asset-id-entry">Asset ID</label>
+          <div class="input-group">
+            <input id="asset-id-entry" name="asset_id" class="form-control text-uppercase"
+                   inputmode="text" pattern="AST-[0-9]{6}" maxlength="10"
+                   placeholder="AST-000001" required autocomplete="off">
+            <button class="btn btn-outline-primary" type="submit">เปิดรายละเอียด</button>
+          </div>
+          <div class="form-text">รองรับรหัสรูปแบบ AST-000001</div>
+        </form>
+      </div>
+    </div>
+  </section>
+</template>

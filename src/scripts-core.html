@@ -66,7 +66,8 @@
     route: '',
     params: {},
     viewToken: 0,
-    loadingCount: 0
+    loadingCount: 0,
+    routeCleanup: null
   };
   CRS.routes = Object.create(null);
 
@@ -413,6 +414,18 @@
     return Boolean(CRS.state.bootstrap && CRS.state.bootstrap.session.isAdmin);
   };
 
+  CRS.setRouteCleanup = function (cleanup) {
+    CRS.state.routeCleanup = typeof cleanup === 'function' ? cleanup : null;
+  };
+
+  async function cleanupCurrentRoute() {
+    const cleanup = CRS.state.routeCleanup;
+    CRS.state.routeCleanup = null;
+    if (!cleanup) return;
+    try { await cleanup(); }
+    catch (error) { console.warn('Route cleanup failed', error); }
+  }
+
   function normalizeRoute(route, params) {
     let name = String(route || '').replace(/^#/, '').trim().toLowerCase();
     const normalizedParams = Object.assign({}, params || {});
@@ -464,6 +477,7 @@
       CRS.navigate('dashboard', {}, true);
       return;
     }
+    await cleanupCurrentRoute();
     CRS.state.route = target.name;
     CRS.state.params = target.params;
     const token = ++CRS.state.viewToken;
@@ -503,32 +517,7 @@
       '</p></div></div></section>';
   }
 
-  function renderScanEntry() {
-    const root = CRS.$('#view-root');
-    root.innerHTML = '<section class="container-fluid px-0" aria-labelledby="scan-entry-heading">' +
-      '<div class="card border-0 shadow-sm mx-auto" style="max-width:36rem"><div class="card-body p-4 p-lg-5">' +
-      '<div class="text-center mb-4"><i class="bi bi-upc-scan display-4 text-primary" aria-hidden="true"></i>' +
-      '<h1 id="scan-entry-heading" class="h4 mt-3">เปิดอุปกรณ์ด้วย Asset ID</h1>' +
-      '<p class="text-secondary">กรอกรหัสจากสติกเกอร์เพื่อเปิดรายละเอียดอุปกรณ์</p></div>' +
-      '<form id="asset-id-entry-form" novalidate><label class="form-label" for="asset-id-entry">Asset ID</label>' +
-      '<div class="input-group"><input id="asset-id-entry" name="asset_id" class="form-control text-uppercase" ' +
-      'pattern="AST-[0-9]{6}" placeholder="AST-000001" required autocomplete="off">' +
-      '<button class="btn btn-primary" type="submit">เปิดรายละเอียด</button></div>' +
-      '<div class="form-text">รองรับรหัสรูปแบบ AST-000001</div></form></div></div></section>';
-    const form = CRS.$('#asset-id-entry-form');
-    form.addEventListener('submit', function (event) {
-      event.preventDefault();
-      const id = String(new FormData(form).get('asset_id') || '').trim().toUpperCase();
-      if (!/^AST-\d{6}$/.test(id)) {
-        CRS.toast('กรุณาระบุ Asset ID ให้ถูกต้อง', 'warning');
-        return;
-      }
-      CRS.navigate('equipment-detail', { id: id });
-    });
-  }
-
   CRS.registerRoute('account', renderAccount);
-  CRS.registerRoute('scan', renderScanEntry);
 
   function updateNetworkStatus() {
     const indicator = CRS.$('#network-status');

@@ -124,7 +124,13 @@ function getWebAppBaseUrl_() {
   var configured = getRuntimeConfig_().WEB_APP_URL;
   var detected = '';
   try { detected = ScriptApp.getService().getUrl() || ''; } catch (ignored) { detected = ''; }
-  return String(configured || detected).replace(/\?.*$/, '').replace(/\/$/, '');
+  var candidate = String(configured || detected).trim();
+  // QR links are security-sensitive navigation inputs. Fail closed for malformed,
+  // credential-bearing, non-HTTPS, or whitespace-containing deployment URLs.
+  if (/[?#]/.test(candidate)) return '';
+  var match = /^https:\/\/([A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?)(?::(\d{1,5}))?(\/[A-Za-z0-9._~!$&'()*+,;=:@%\/-]*)?$/.exec(candidate);
+  if (!match || match[1].indexOf('..') !== -1 || (match[2] && Number(match[2]) > 65535)) return '';
+  return candidate.replace(/\/$/, '');
 }
 
 function buildAssetUrl_(assetId) {

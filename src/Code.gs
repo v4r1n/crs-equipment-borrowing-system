@@ -4,6 +4,7 @@ var HTML_PARTIALS_ = Object.freeze([
   'dashboard',
   'equipment',
   'equipment-detail',
+  'scan',
   'borrow',
   'my-borrow',
   'admin',
@@ -11,8 +12,11 @@ var HTML_PARTIALS_ = Object.freeze([
   'scripts-core',
   'scripts-dashboard',
   'scripts-equipment',
+  'scripts-qr',
   'scripts-borrow',
-  'scripts-admin'
+  'scripts-admin',
+  'vendor-qrcode-generator',
+  'vendor-html5-qrcode'
 ]);
 
 var CLIENT_ROUTES_ = Object.freeze([

@@ -87,3 +87,13 @@ Status: Accepted — 2026-08-27
 The browser uses one Apps Script HTML-service shell with allowlisted partials and routes. `google.script.history`/`google.script.url` preserve navigation and Asset deep links without full reloads; each renderer owns a view token so late asynchronous responses cannot overwrite a newer route. Admin visibility is a usability gate only—every RPC remains server-authorized.
 
 Every browser mutation stores a command ID, payload fingerprint, and uncertainty flag in `sessionStorage` before calling `google.script.run`. A definite pre-start validation/authorization error clears the entry; success clears it; an uncertain transport or server result locks the exact payload to the same command ID so a retry cannot create a second operation. The server Operations journal remains authoritative and Admin reconciliation handles commands that cannot be resolved safely in the originating browser session.
+
+## ADR-014 — Vendored QR generation and image-capture scanning
+
+Status: Accepted — 2026-08-28
+
+V1 vendors exact browser distributions of `qrcode-generator` 2.0.4 and `html5-qrcode` 2.3.8 with checksums and license notices. QR symbols use error-correction level Q, an integer-pixel matrix, and a four-module quiet zone. The encoded value is only the canonical HTTPS Equipment Detail URL; it carries no identity, authorization, borrow command, or secret.
+
+Apps Script HTML Service restricts permission-sensitive `navigator.mediaDevices.getUserMedia()` use inside its sandbox. The in-app scanner therefore calls only `html5-qrcode.scanFile()` against a user-selected image; `capture="environment"` lets supported mobile browsers offer their native camera while manual Asset ID remains available. The application does not call the library's live-camera APIs. A future continuous preview requires a separately hosted HTTPS scanner and a new reviewed trust boundary.
+
+Decoded content is untrusted. The client accepts only an exact Asset ID or an HTTPS URL whose origin and path equal `bootstrap.app.webAppUrl`, whose optional view is `equipment-detail`, and whose sole ID matches `AST-000001`. Valid scans navigate internally and never execute a decoded URL or mutation. Admin scan follow-up passes an exact `assetId` to the already-authorized borrowing query and reuses confirmation-based workflows.

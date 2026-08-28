@@ -356,7 +356,16 @@
         button.dataset.rowVersion = record.row_version;
       });
     }
-    setVisible(CRS.$('#equipment-qr', detailPage), false);
+    try {
+      CRS.qr.renderAssetQr(record, detailPage);
+    } catch (error) {
+      if (global.console && typeof global.console.error === 'function') {
+        global.console.error('Equipment QR rendering failed', error);
+      }
+      var qrHost = CRS.$('#equipment-qr-content', detailPage);
+      if (qrHost) qrHost.textContent = 'ไม่สามารถสร้าง QR Code ได้ กรุณาตรวจสอบการตั้งค่า WEB_APP_URL';
+      CRS.$$('#equipment-qr button', detailPage).forEach(function (button) { button.disabled = true; });
+    }
     setDetailState('content');
   }
 
@@ -964,6 +973,29 @@
       } else if (name === 'upload-image' && isAdmin()) {
         event.preventDefault();
         latestEquipment(assetId).then(openImageEditor).catch(CRS.handleError);
+      } else if (name === 'manage-asset-borrowing' && isAdmin()) {
+        event.preventDefault();
+        CRS.navigate('admin', { tab: 'borrowing', assetId: assetId, status: '' });
+      } else if (name === 'download-qr') {
+        event.preventDefault();
+        action.disabled = true;
+        var originalDownloadLabel = action.innerHTML;
+        action.innerHTML = '<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>กำลังสร้างไฟล์';
+        Promise.resolve().then(function () {
+          return CRS.qr.downloadAssetQr(currentDetail);
+        }).then(function () {
+          CRS.toast('ดาวน์โหลดสติกเกอร์ QR แล้ว', 'success');
+        }).catch(CRS.handleError).finally(function () {
+          if (action.isConnected) {
+            action.disabled = false;
+            action.innerHTML = originalDownloadLabel;
+          }
+        });
+      } else if (name === 'copy-equipment-link') {
+        event.preventDefault();
+        CRS.qr.copyAssetLink(assetId).then(function () {
+          CRS.toast('คัดลอกลิงก์อุปกรณ์แล้ว', 'success');
+        }).catch(CRS.handleError);
       }
     });
   }

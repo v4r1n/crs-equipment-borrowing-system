@@ -1,0 +1,379 @@
+<script>
+(function (global) {
+  'use strict';
+
+  var CRS = global.CRS = global.CRS || {};
+  var MAX_SCAN_FILE_BYTES = 10 * 1024 * 1024;
+  var MAX_SCAN_PIXELS = 24 * 1000 * 1000;
+  var MAX_SCAN_DIMENSION = 10000;
+  var MAX_DECODED_LENGTH = 2048;
+  var ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+  var ASSET_PATTERN = /^AST-\d{6}$/;
+
+  function text(value) {
+    return String(value === undefined || value === null ? '' : value);
+  }
+
+  function normalizedAssetId(value) {
+    var assetId = text(value).trim().toUpperCase();
+    return ASSET_PATTERN.test(assetId) ? assetId : '';
+  }
+
+  function baseUrl() {
+    var configured = CRS.state.bootstrap && CRS.state.bootstrap.app.webAppUrl;
+    if (!configured) return null;
+    try {
+      var url = new URL(text(configured).trim());
+      if (url.protocol !== 'https:' || url.username || url.password) return null;
+      url.search = '';
+      url.hash = '';
+      url.pathname = url.pathname.replace(/\/$/, '');
+      return url;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function sameApplication(left, right) {
+    return left.protocol === right.protocol && left.host === right.host &&
+      left.pathname === right.pathname;
+  }
+
+  function parseScannedAsset(value) {
+    var decoded = text(value).trim();
+    if (!decoded || decoded.length > MAX_DECODED_LENGTH) return null;
+    var rawId = normalizedAssetId(decoded);
+    if (rawId) return { assetId: rawId, kind: 'asset-id' };
+
+    var canonicalBase = baseUrl();
+    if (!canonicalBase) return null;
+    if (decoded.indexOf('#') !== -1) return null;
+    var url;
+    try { url = new URL(decoded); }
+    catch (error) { return null; }
+    if (url.protocol !== 'https:' || url.username || url.password || url.hash) return null;
+    if (!sameApplication(url, canonicalBase)) return null;
+
+    var allowedKeys = { view: true, id: true, asset_id: true };
+    var invalidKey = false;
+    url.searchParams.forEach(function (unusedValue, key) {
+      if (!Object.prototype.hasOwnProperty.call(allowedKeys, key)) invalidKey = true;
+    });
+    if (invalidKey) return null;
+
+    var views = url.searchParams.getAll('view');
+    if (views.length > 1 || (views.length === 1 && views[0] !== 'equipment-detail')) return null;
+    var ids = url.searchParams.getAll('id').concat(url.searchParams.getAll('asset_id'));
+    if (ids.length !== 1) return null;
+    var assetId = normalizedAssetId(ids[0]);
+    return assetId ? { assetId: assetId, kind: 'url' } : null;
+  }
+
+  function canonicalAssetUrl(assetId) {
+    var normalizedId = normalizedAssetId(assetId);
+    var canonicalBase = baseUrl();
+    if (!normalizedId || !canonicalBase) return '';
+    var url = new URL(canonicalBase.toString());
+    url.searchParams.set('view', 'equipment-detail');
+    url.searchParams.set('id', normalizedId);
+    return url.toString();
+  }
+
+  function qrMatrix(url) {
+    if (typeof global.qrcode !== 'function') {
+      throw new Error('ไม่สามารถเปิดตัวสร้าง QR Code ได้');
+    }
+    var qr = global.qrcode(0, 'Q');
+    qr.addData(url, 'Byte');
+    qr.make();
+    return qr;
+  }
+
+  function paintMatrix(canvas, qr, options) {
+    var settings = options || {};
+    var quiet = 4;
+    var modules = qr.getModuleCount();
+    var cell = Math.max(1, Number(settings.cellSize || 6));
+    var size = (modules + quiet * 2) * cell;
+    var left = Number(settings.left || 0);
+    var top = Number(settings.top || 0);
+    var context = canvas.getContext('2d');
+    context.imageSmoothingEnabled = false;
+    context.fillStyle = '#ffffff';
+    context.fillRect(left, top, size, size);
+    context.fillStyle = '#000000';
+    for (var row = 0; row < modules; row += 1) {
+      for (var column = 0; column < modules; column += 1) {
+        if (qr.isDark(row, column)) {
+          context.fillRect(left + (column + quiet) * cell, top + (row + quiet) * cell, cell, cell);
+        }
+      }
+    }
+    return { size: size, modules: modules, cellSize: cell, quietZone: quiet };
+  }
+
+  function renderAssetQr(record, root) {
+    var assetId = normalizedAssetId(record && record.asset_id);
+    var url = canonicalAssetUrl(assetId);
+    var host = CRS.$('#equipment-qr-content', root);
+    var section = CRS.$('#equipment-qr', root);
+    if (!host || !section) return false;
+    host.replaceChildren();
+    if (!url) {
+      var message = document.createElement('div');
+      message.className = 'alert alert-warning text-start mb-0';
+      message.setAttribute('role', 'status');
+      message.textContent = 'QR Code ยังไม่พร้อมใช้งาน กรุณาให้ผู้ดูแลตั้งค่า WEB_APP_URL ของ deployment';
+      host.appendChild(message);
+      CRS.$$('#equipment-qr button', root).forEach(function (button) { button.disabled = true; });
+      section.hidden = false;
+      section.classList.remove('d-none');
+      return false;
+    }
+    var qr = qrMatrix(url);
+    var canvas = document.createElement('canvas');
+    var modules = qr.getModuleCount();
+    var cell = Math.max(4, Math.floor(300 / (modules + 8)));
+    var size = (modules + 8) * cell;
+    canvas.width = size;
+    canvas.height = size;
+    canvas.className = 'equipment-qr-canvas';
+    canvas.setAttribute('role', 'img');
+    canvas.setAttribute('aria-label', 'QR Code สำหรับอุปกรณ์ ' + assetId);
+    paintMatrix(canvas, qr, { cellSize: cell });
+    host.appendChild(canvas);
+    CRS.$$('[data-action="download-qr"], [data-action="copy-equipment-link"]', section)
+      .forEach(function (button) {
+        button.dataset.assetId = assetId;
+        button.dataset.qrUrl = url;
+      });
+    section.hidden = false;
+    section.classList.remove('d-none');
+    return true;
+  }
+
+  function fitText(context, value, maxWidth) {
+    var output = text(value).trim();
+    if (context.measureText(output).width <= maxWidth) return output;
+    while (output.length > 1 && context.measureText(output + '…').width > maxWidth) {
+      output = output.slice(0, -1);
+    }
+    return output + '…';
+  }
+
+  function stickerCanvas(record) {
+    var assetId = normalizedAssetId(record && record.asset_id);
+    var url = canonicalAssetUrl(assetId);
+    if (!url) throw new Error('ยังไม่ได้ตั้งค่า WEB_APP_URL สำหรับ QR Code');
+    var qr = qrMatrix(url);
+    var canvas = document.createElement('canvas');
+    canvas.width = 1200;
+    canvas.height = 1500;
+    var context = canvas.getContext('2d');
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = '#155e75';
+    context.textAlign = 'center';
+    context.font = '700 54px "Noto Sans Thai", sans-serif';
+    context.fillText('CRS Equipment', 600, 90);
+    context.fillStyle = '#111827';
+    context.font = '700 66px "Noto Sans Thai", sans-serif';
+    context.fillText(fitText(context, record.name || 'อุปกรณ์', 1040), 600, 180);
+
+    var modules = qr.getModuleCount();
+    var cell = Math.max(1, Math.floor(1040 / (modules + 8)));
+    var qrSize = (modules + 8) * cell;
+    paintMatrix(canvas, qr, { cellSize: cell, left: Math.floor((1200 - qrSize) / 2), top: 235 });
+
+    var footerTop = 235 + qrSize + 85;
+    context.fillStyle = '#111827';
+    context.font = '700 82px "Noto Sans Thai", sans-serif';
+    context.fillText(assetId, 600, footerTop);
+    context.fillStyle = '#4b5563';
+    context.font = '500 42px "Noto Sans Thai", sans-serif';
+    context.fillText('สแกนเพื่อดูรายละเอียดอุปกรณ์', 600, footerTop + 75);
+    return canvas;
+  }
+
+  function downloadAssetQr(record) {
+    var canvas = stickerCanvas(record);
+    var assetId = normalizedAssetId(record.asset_id);
+    return new Promise(function (resolve, reject) {
+      canvas.toBlob(function (blob) {
+        if (!blob) {
+          reject(new Error('ไม่สามารถสร้างไฟล์ QR Code ได้'));
+          return;
+        }
+        var objectUrl = URL.createObjectURL(blob);
+        var link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = 'CRS-' + assetId + '-sticker.png';
+        link.rel = 'noopener';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        global.setTimeout(function () { URL.revokeObjectURL(objectUrl); }, 1000);
+        resolve({ fileName: link.download, bytes: blob.size });
+      }, 'image/png');
+    });
+  }
+
+  async function copyAssetLink(assetId) {
+    var url = canonicalAssetUrl(assetId);
+    if (!url) throw new Error('ยังไม่ได้ตั้งค่า WEB_APP_URL สำหรับ QR Code');
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      try {
+        await navigator.clipboard.writeText(url);
+        return;
+      } catch (ignored) {}
+    }
+    var input = document.createElement('textarea');
+    input.value = url;
+    input.readOnly = true;
+    input.className = 'visually-hidden';
+    document.body.appendChild(input);
+    input.select();
+    var copied = document.execCommand && document.execCommand('copy');
+    input.remove();
+    if (!copied) throw new Error('เบราว์เซอร์ไม่อนุญาตให้คัดลอก กรุณาคัดลอกจากแถบที่อยู่');
+  }
+
+  function showScanError(page, message) {
+    var box = CRS.$('#scan-error', page);
+    if (!box) return;
+    box.textContent = message;
+    box.hidden = false;
+  }
+
+  function setScanBusy(page, busy) {
+    var input = CRS.$('#scan-image-input', page);
+    var label = CRS.$('#scan-image-label', page);
+    var progress = CRS.$('#scan-progress', page);
+    if (input) input.disabled = busy;
+    if (label) label.setAttribute('aria-disabled', busy ? 'true' : 'false');
+    if (progress) progress.hidden = !busy;
+  }
+
+  async function validateImageDimensions(file) {
+    var width;
+    var height;
+    if (typeof global.createImageBitmap === 'function') {
+      var bitmap = await global.createImageBitmap(file);
+      width = bitmap.width;
+      height = bitmap.height;
+      if (typeof bitmap.close === 'function') bitmap.close();
+    } else {
+      var objectUrl = URL.createObjectURL(file);
+      try {
+        var image = await new Promise(function (resolve, reject) {
+          var candidate = new Image();
+          candidate.onload = function () { resolve(candidate); };
+          candidate.onerror = function () { reject(new Error('รูปภาพไม่ถูกต้อง')); };
+          candidate.src = objectUrl;
+        });
+        width = image.naturalWidth;
+        height = image.naturalHeight;
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
+    if (!width || !height || width > MAX_SCAN_DIMENSION || height > MAX_SCAN_DIMENSION ||
+        width * height > MAX_SCAN_PIXELS) {
+      throw new Error('รูปมีความละเอียดสูงเกินไป');
+    }
+    return { width: width, height: height };
+  }
+
+  async function renderScan(unusedParams, routeToken) {
+    var page = CRS.mount('view-scan-template');
+    var input = CRS.$('#scan-image-input', page);
+    var form = CRS.$('#asset-id-entry-form', page);
+    var scanner = null;
+    var requestToken = 0;
+    var disposed = false;
+
+    CRS.setRouteCleanup(function () {
+      disposed = true;
+      requestToken += 1;
+      if (scanner) {
+        try { scanner.clear(); } catch (ignored) {}
+        scanner = null;
+      }
+    });
+
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var assetId = normalizedAssetId(new FormData(form).get('asset_id'));
+      if (!assetId) {
+        showScanError(page, 'กรุณาระบุ Asset ID ในรูปแบบ AST-000001');
+        return;
+      }
+      CRS.navigate('equipment-detail', { id: assetId, from: 'scan' });
+    });
+
+    input.addEventListener('change', async function () {
+      var file = input.files && input.files[0];
+      input.value = '';
+      var errorBox = CRS.$('#scan-error', page);
+      if (errorBox) errorBox.hidden = true;
+      if (!file) return;
+      if (ALLOWED_IMAGE_TYPES.indexOf(file.type) === -1) {
+        showScanError(page, 'กรุณาเลือกไฟล์ PNG, JPEG หรือ WebP');
+        return;
+      }
+      if (file.size <= 0 || file.size > MAX_SCAN_FILE_BYTES) {
+        showScanError(page, 'รูป QR ต้องมีขนาดไม่เกิน 10 MB');
+        return;
+      }
+      if (typeof global.Html5Qrcode !== 'function') {
+        showScanError(page, 'ไม่สามารถเปิดตัวอ่าน QR Code ได้ กรุณาใช้ Asset ID ด้านล่าง');
+        return;
+      }
+      var currentRequest = ++requestToken;
+      setScanBusy(page, true);
+      try {
+        await validateImageDimensions(file);
+        if (disposed || currentRequest !== requestToken || routeToken !== CRS.state.viewToken) return;
+        if (!scanner) {
+          scanner = new global.Html5Qrcode('scan-reader', {
+            formatsToSupport: [global.Html5QrcodeSupportedFormats.QR_CODE],
+            verbose: false
+          });
+        }
+        var decoded = await scanner.scanFile(file, false);
+        if (disposed || currentRequest !== requestToken || routeToken !== CRS.state.viewToken) return;
+        var parsed = parseScannedAsset(decoded);
+        if (!parsed) {
+          showScanError(page, 'QR นี้ไม่ใช่ QR อุปกรณ์ของระบบ กรุณาลองใหม่หรือกรอก Asset ID');
+          return;
+        }
+        CRS.toast('อ่าน QR Code สำเร็จ', 'success');
+        CRS.navigate('equipment-detail', { id: parsed.assetId, from: 'scan' });
+      } catch (error) {
+        if (global.console && typeof global.console.error === 'function') {
+          global.console.error('QR image scan failed', error);
+        }
+        if (!disposed && currentRequest === requestToken) {
+          showScanError(page, error && error.message === 'รูปมีความละเอียดสูงเกินไป'
+            ? 'รูปมีความละเอียดสูงเกิน 24 ล้านพิกเซล กรุณาลดขนาดแล้วลองอีกครั้ง'
+            : 'ไม่พบ QR Code ที่อ่านได้ในรูป กรุณาถ่ายให้ชัดและลองอีกครั้ง');
+        }
+      } finally {
+        if (!disposed && currentRequest === requestToken) setScanBusy(page, false);
+      }
+    });
+  }
+
+  CRS.qr = Object.freeze({
+    assetId: normalizedAssetId,
+    parseScannedAsset: parseScannedAsset,
+    canonicalAssetUrl: canonicalAssetUrl,
+    createMatrix: qrMatrix,
+    paintMatrix: paintMatrix,
+    renderAssetQr: renderAssetQr,
+    downloadAssetQr: downloadAssetQr,
+    copyAssetLink: copyAssetLink
+  });
+  CRS.registerRoute('scan', renderScan);
+})(window);
+</script>
