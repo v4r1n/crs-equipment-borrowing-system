@@ -26,17 +26,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Return-time immutable included-item snapshots, required-item enforcement, exact checklist validation, and separate condition/disposition decisions.
 - Schema migrations 002 and 003 for the Operations journal, required-item evidence, multi-cell stored results, result integrity hashes, and `ABORTED` operations.
 - Cross-sheet integrity audit for IDs, references, state projections, operation/history evidence, migration checksums, and required-item snapshots.
+- Responsive Thai single-page shell with desktop sidebar, mobile bottom navigation, Noto Sans Thai design system, access/loading/offline states, confirmations, and toast feedback.
+- Dashboard views for users and admins, including current metrics, latest loans, due-soon/overdue lists, and most-borrowed equipment.
+- Searchable, filterable, sortable, paginated equipment catalog with card/table modes, detail view, included items, and admin equipment editor, status, and Drive-image workflows.
+- Borrow request, My Borrow, personal history, return-request, account, and complete admin-center screens for borrowing, assets, users, categories, history, integrity audit, and durable operation recovery.
+- Promise-based client API for all 32 guarded RPCs, SPA history/deep links, optimistic row versions, field-level Thai errors, and session-backed stable command IDs for uncertain retries.
 
 ### Changed
 
 - Upgraded the additive data contract to schema version 3 and expanded setup/repositories for the Operations sheet and batched multi-row writes.
 - Made a pending borrow request an immediate hard hold and synchronized every workflow transition between Borrow and Equipment under the Script Lock.
 - Drive image URLs retain resource keys when present and support only verified `DOMAIN_WITH_LINK` or `ANYONE_WITH_LINK` sharing.
+- Admin/user dashboard links preserve route filters, equipment creation supports an admin deep link, and category mutations refresh the in-memory active-category reference list.
 
 ### Security
 
 - Re-authorize every mutation from the current Users row inside the Script Lock; blank, external, unknown, inactive, or insufficient-role identities fail closed.
 - Restrict first setup to configured same-domain admins and subsequent setup runs to currently active admins, with authorization checked inside the setup lock.
 - Redact procurement, Drive file, active-workflow, and staff audit fields from non-admin equipment/borrowing responses.
+- Escape dynamic client markup, allowlist routes/includes and Drive thumbnail URLs, gate admin routes in the client, and re-authorize every admin operation on the server.
+- Prevent an active admin from changing the email of their own signed-in Users row, avoiding identity orphaning; another admin may perform the controlled change.
 
 [Unreleased]: https://github.com/v4r1n/crs-equipment-borrowing-system/compare/main...codex/initial-v1

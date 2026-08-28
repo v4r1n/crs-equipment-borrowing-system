@@ -1,0 +1,146 @@
+<template id="view-equipment-template">
+  <section id="page-equipment" class="app-page" data-page="equipment" aria-labelledby="equipment-title">
+    <header class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+      <div>
+        <p class="text-body-secondary small mb-1">ค้นหาและตรวจสอบสถานะทรัพย์สิน</p>
+        <h1 id="equipment-title" class="h3 mb-0">อุปกรณ์</h1>
+      </div>
+      <button type="button" class="btn btn-primary align-self-start align-self-md-center"
+              data-action="add-equipment" data-admin-only>
+        <i class="bi bi-plus-lg me-2" aria-hidden="true"></i>เพิ่มอุปกรณ์
+      </button>
+    </header>
+
+    <form id="form-equipment-filter" class="card card-body mb-4" data-filter-form novalidate>
+      <div class="row g-3 align-items-end">
+        <div class="col-12 col-lg-5">
+          <label for="equipment-search" class="form-label">ค้นหา</label>
+          <div class="input-group">
+            <span class="input-group-text" aria-hidden="true"><i class="bi bi-search"></i></span>
+            <input id="equipment-search" name="search" type="search" class="form-control"
+                   autocomplete="off" aria-describedby="equipment-search-help">
+          </div>
+          <div id="equipment-search-help" class="form-text">ค้นหาจากรหัสทรัพย์สิน, SKU, ชื่อ, ยี่ห้อ, รุ่น หรือ Serial Number</div>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+          <label for="equipment-category-filter" class="form-label">หมวดหมู่</label>
+          <select id="equipment-category-filter" name="categoryId" class="form-select">
+            <option value="">ทุกหมวดหมู่</option>
+          </select>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+          <label for="equipment-status-filter" class="form-label">สถานะ</label>
+          <select id="equipment-status-filter" name="status" class="form-select">
+            <option value="">ทุกสถานะ</option>
+            <option value="AVAILABLE">พร้อมใช้งาน</option>
+            <option value="PENDING">รออนุมัติ</option>
+            <option value="RESERVED">จองแล้ว</option>
+            <option value="BORROWED">กำลังถูกยืม</option>
+            <option value="RETURNING">รอตรวจรับคืน</option>
+            <option value="MAINTENANCE">ซ่อมบำรุง</option>
+            <option value="DAMAGED">ชำรุด</option>
+            <option value="LOST">สูญหาย</option>
+            <option value="RETIRED">เลิกใช้งาน</option>
+          </select>
+        </div>
+        <div class="col-6 col-md-4 col-lg-3">
+          <label for="equipment-location-filter" class="form-label">สถานที่จัดเก็บ</label>
+          <select id="equipment-location-filter" name="location" class="form-select">
+            <option value="">ทุกสถานที่</option>
+          </select>
+        </div>
+        <div class="col-6 col-md-4 col-lg-3">
+          <label for="equipment-department-filter" class="form-label">หน่วยงานเจ้าของ</label>
+          <select id="equipment-department-filter" name="department" class="form-select">
+            <option value="">ทุกหน่วยงาน</option>
+          </select>
+        </div>
+        <div class="col-6 col-md-4 col-lg-3">
+          <label for="equipment-sort-by" class="form-label">เรียงตาม</label>
+          <select id="equipment-sort-by" name="sortBy" class="form-select">
+            <option value="name">ชื่ออุปกรณ์</option>
+            <option value="asset_id">รหัสทรัพย์สิน</option>
+            <option value="sku">SKU</option>
+            <option value="brand">ยี่ห้อ</option>
+            <option value="model">รุ่น</option>
+            <option value="status">สถานะ</option>
+            <option value="location">สถานที่จัดเก็บ</option>
+            <option value="created_at">วันที่เพิ่ม</option>
+          </select>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+          <label for="equipment-sort-direction" class="form-label">ลำดับ</label>
+          <select id="equipment-sort-direction" name="sortDirection" class="form-select">
+            <option value="asc">น้อยไปมาก</option>
+            <option value="desc">มากไปน้อย</option>
+          </select>
+        </div>
+        <div class="col-12 col-md-auto ms-md-auto d-flex gap-2">
+          <button type="submit" class="btn btn-primary flex-grow-1">
+            <i class="bi bi-funnel me-2" aria-hidden="true"></i>ใช้ตัวกรอง
+          </button>
+          <button type="reset" class="btn btn-outline-secondary" data-action="clear-equipment-filters">ล้าง</button>
+        </div>
+      </div>
+    </form>
+
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+      <p id="equipment-results-summary" class="mb-0 text-body-secondary" role="status" aria-live="polite"></p>
+      <div class="btn-group" role="group" aria-label="รูปแบบการแสดงผล">
+        <button type="button" class="btn btn-outline-secondary active" data-action="set-equipment-view"
+                data-view-mode="cards" aria-pressed="true" aria-controls="equipment-card-list">
+          <i class="bi bi-grid-3x2-gap me-1" aria-hidden="true"></i><span class="visually-hidden">มุมมอง</span>การ์ด
+        </button>
+        <button type="button" class="btn btn-outline-secondary" data-action="set-equipment-view"
+                data-view-mode="table" aria-pressed="false" aria-controls="equipment-table-wrap">
+          <i class="bi bi-table me-1" aria-hidden="true"></i><span class="visually-hidden">มุมมอง</span>ตาราง
+        </button>
+      </div>
+    </div>
+
+    <div id="equipment-loading" class="d-flex align-items-center justify-content-center gap-2 py-5"
+         data-state="loading" role="status" aria-live="polite">
+      <span class="spinner-border spinner-border-sm text-primary" aria-hidden="true"></span>
+      <span>กำลังโหลดรายการอุปกรณ์</span>
+    </div>
+    <div id="equipment-error" class="alert alert-danger d-none" data-state="error" role="alert">
+      <div class="d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-3">
+        <span data-error-message>ไม่สามารถโหลดรายการอุปกรณ์ได้</span>
+        <button type="button" class="btn btn-sm btn-outline-danger" data-action="reload-equipment">ลองอีกครั้ง</button>
+      </div>
+    </div>
+    <div id="equipment-empty" class="card card-body text-center py-5 d-none" data-state="empty">
+      <i class="bi bi-box-seam fs-1 text-body-secondary mb-3" aria-hidden="true"></i>
+      <h2 class="h5">ไม่พบอุปกรณ์</h2>
+      <p class="text-body-secondary mb-3">ลองเปลี่ยนคำค้นหาหรือตัวกรองเพื่อดูรายการอื่น</p>
+      <button type="button" class="btn btn-outline-primary align-self-center" data-action="clear-equipment-filters">ล้างตัวกรอง</button>
+    </div>
+
+    <div id="equipment-results" class="d-none" data-state="content">
+      <div id="equipment-card-list" class="row g-3" aria-live="polite"></div>
+
+      <div id="equipment-table-wrap" class="card d-none overflow-hidden">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <caption class="visually-hidden">รายการอุปกรณ์ตามตัวกรองปัจจุบัน</caption>
+            <thead class="table-light">
+              <tr>
+                <th scope="col">อุปกรณ์</th>
+                <th scope="col">รหัส / SKU</th>
+                <th scope="col">หมวดหมู่</th>
+                <th scope="col">สถานที่</th>
+                <th scope="col">สถานะ</th>
+                <th scope="col" class="text-end">การทำงาน</th>
+              </tr>
+            </thead>
+            <tbody id="table-body-equipment"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <nav class="mt-4" aria-label="หน้ารายการอุปกรณ์">
+        <ul id="pagination-equipment" class="pagination justify-content-center flex-wrap mb-0"></ul>
+      </nav>
+    </div>
+  </section>
+</template>

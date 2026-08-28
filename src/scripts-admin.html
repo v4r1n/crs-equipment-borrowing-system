@@ -1,0 +1,1316 @@
+<script>
+(function (global) {
+  'use strict';
+
+  var CRS = global.CRS = global.CRS || {};
+  var LIST_UI = Object.freeze({
+    borrow: ['#admin-borrow-loading', '#admin-borrow-error', '#admin-borrow-empty', '#admin-borrow-results'],
+    users: ['#admin-users-loading', '#admin-users-error', '#admin-users-empty', '#admin-users-results'],
+    categories: ['#admin-categories-loading', '#admin-categories-error', '#admin-categories-empty', '#admin-categories-results'],
+    history: ['#admin-history-loading', '#admin-history-error', '#admin-history-empty', '#admin-history-results'],
+    operations: ['#admin-operations-loading', '#admin-operations-error', '#admin-operations-empty', '#admin-operations-results']
+  });
+  var TAB_BY_PANE = Object.freeze({
+    'admin-borrowing': 'borrowing',
+    'admin-assets': 'assets',
+    'admin-users': 'users',
+    'admin-categories': 'categories',
+    'admin-history': 'history',
+    'admin-system': 'system'
+  });
+  var TAB_BUTTON = Object.freeze({
+    borrowing: '#admin-borrowing-tab',
+    assets: '#admin-assets-tab',
+    users: '#admin-users-tab',
+    categories: '#admin-categories-tab',
+    history: '#admin-history-tab',
+    system: '#admin-system-tab'
+  });
+  var RETURN_MATRIX = Object.freeze({
+    NORMAL: ['AVAILABLE'],
+    COSMETIC_DAMAGE: ['AVAILABLE', 'MAINTENANCE'],
+    DAMAGED: ['DAMAGED', 'MAINTENANCE'],
+    MISSING_ITEMS: ['DAMAGED', 'MAINTENANCE'],
+    LOST: ['LOST']
+  });
+
+  function value(input) {
+    return input === null || input === undefined ? '' : String(input);
+  }
+
+  function text(input, fallback) {
+    var normalized = value(input).trim();
+    return normalized || (fallback || '—');
+  }
+
+  function escape(input) {
+    return CRS.escapeHtml(value(input));
+  }
+
+  function integer(input, fallback) {
+    var number = Number(input);
+    return Number.isSafeInteger(number) && number > 0 ? number : fallback;
+  }
+
+  function defaultPageSize() {
+    var app = CRS.state && CRS.state.bootstrap && CRS.state.bootstrap.app;
+    return integer(app && app.defaultPageSize, 20);
+  }
+
+  function isAdmin() {
+    var session = CRS.state && CRS.state.bootstrap && CRS.state.bootstrap.session;
+    return Boolean(session && (session.isAdmin || session.role === 'ADMIN'));
+  }
+
+  function alive(context) {
+    return Boolean(context && context.page && context.page.isConnected &&
+      context.routeToken === CRS.state.viewToken);
+  }
+
+  function setVisible(node, visible) {
+    if (!node) return;
+    node.hidden = !visible;
+    node.classList.toggle('d-none', !visible);
+  }
+
+  function setListState(context, name, state, error) {
+    if (!alive(context)) return;
+    var selectors = LIST_UI[name];
+    if (!selectors) return;
+    selectors.forEach(function (selector, index) {
+      var expected = ['loading', 'error', 'empty', 'content'][index];
+      setVisible(CRS.$(selector, context.page), state === expected);
+    });
+    context.page.setAttribute('aria-busy', state === 'loading' ? 'true' : 'false');
+    if (state === 'error') {
+      var errorBox = CRS.$(selectors[1], context.page);
+      if (errorBox) errorBox.textContent = (error && error.message) || 'ไม่สามารถโหลดข้อมูลได้';
+    }
+  }
+
+  function setFormError(form, error) {
+    var box = form && form.querySelector('[data-form-error]');
+    if (!box) return;
+    box.textContent = error && error.message ? error.message : '';
+    setVisible(box, Boolean(box.textContent));
+  }
+
+  function applyNamedFeedback(form, error) {
+    if (!form || !error || !error.fieldErrors) return;
+    CRS.$$('[data-field-error]', form).forEach(function (feedback) {
+      var message = error.fieldErrors[feedback.dataset.fieldError];
+      if (message) feedback.textContent = message;
+    });
+  }
+
+  function prepareForm(form) {
+    if (!form) return;
+    form.reset();
+    form.classList.remove('was-validated');
+    CRS.clearFieldErrors(form);
+    CRS.$$('[data-field-error]', form).forEach(function (feedback) { feedback.textContent = ''; });
+    setFormError(form, null);
+  }
+
+  function formData(form) {
+    return new FormData(form);
+  }
+
+  function pagination(result, action) {
+    return CRS.paginationItems(result || {}, action);
+  }
+
+  function safeJson(input) {
+    try { return JSON.stringify(input === undefined ? null : input, null, 2); }
+    catch (error) { return 'ไม่สามารถแสดงข้อมูล JSON ได้'; }
+  }
+
+  function borrowQueryFromForm(context) {
+    var data = formData(CRS.$('#form-admin-borrow-filter', context.page));
+    return Object.assign({}, context.query.borrow, {
+      search: value(data.get('search')).trim(),
+      status: value(data.get('status')).trim().toUpperCase(),
+      sortBy: value(data.get('sortBy') || 'requested_at'),
+      sortDirection: value(data.get('sortDirection') || 'desc'),
+      page: 1
+    });
+  }
+
+  function userQueryFromForm(context) {
+    var data = formData(CRS.$('#form-admin-user-filter', context.page));
+    return Object.assign({}, context.query.users, {
+      search: value(data.get('search')).trim(),
+      role: value(data.get('role')).trim().toUpperCase(),
+      status: value(data.get('status')).trim().toUpperCase(),
+      page: 1
+    });
+  }
+
+  function categoryQueryFromForm(context) {
+    var data = formData(CRS.$('#form-admin-category-filter', context.page));
+    return Object.assign({}, context.query.categories, {
+      search: value(data.get('search')).trim(),
+      status: value(data.get('status')).trim().toUpperCase(),
+      page: 1
+    });
+  }
+
+  function historyQueryFromForm(context) {
+    var data = formData(CRS.$('#form-admin-history-filter', context.page));
+    return Object.assign({}, context.query.history, {
+      search: value(data.get('search')).trim(),
+      entityType: value(data.get('entityType')).trim().toUpperCase(),
+      action: value(data.get('action')).trim().toUpperCase(),
+      page: 1
+    });
+  }
+
+  function operationQueryFromForm(context) {
+    var data = formData(CRS.$('#form-admin-operation-filter', context.page));
+    return Object.assign({}, context.query.operations, {
+      search: value(data.get('search')).trim(),
+      status: value(data.get('status')).trim().toUpperCase(),
+      action: value(data.get('action')).trim().toUpperCase(),
+      page: 1
+    });
+  }
+
+  function syncBorrowQuickFilters(context) {
+    var selected = context.query.borrow.status;
+    CRS.$$('[data-action="filter-admin-borrow"]', context.page).forEach(function (button) {
+      var active = value(button.dataset.status) === selected;
+      var danger = button.dataset.status === 'OVERDUE';
+      button.classList.toggle('btn-primary', active && !danger);
+      button.classList.toggle('btn-danger', active && danger);
+      button.classList.toggle('btn-outline-primary', !active && !danger && Boolean(button.dataset.status));
+      button.classList.toggle('btn-outline-danger', !active && danger);
+      button.classList.toggle('btn-outline-secondary', !active && !button.dataset.status);
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    var select = CRS.$('#admin-borrow-status', context.page);
+    if (select) select.value = selected;
+  }
+
+  function borrowActions(record) {
+    var id = escape(record.borrow_id);
+    var version = Number(record.row_version || 0);
+    var buttons = [];
+    buttons.push('<button type="button" class="btn btn-sm btn-outline-primary" data-action="view-admin-borrow" ' +
+      'data-borrow-id="' + id + '">รายละเอียด</button>');
+    if (record.status === 'PENDING_APPROVAL') {
+      buttons.push('<button type="button" class="btn btn-sm btn-success" data-action="admin-borrow-action" ' +
+        'data-borrow-action="approve" data-borrow-id="' + id + '" data-row-version="' + version + '">อนุมัติ</button>');
+      buttons.push('<button type="button" class="btn btn-sm btn-outline-danger" data-action="admin-borrow-action" ' +
+        'data-borrow-action="reject" data-borrow-id="' + id + '" data-row-version="' + version + '">ไม่อนุมัติ</button>');
+    } else if (record.status === 'APPROVED') {
+      buttons.push('<button type="button" class="btn btn-sm btn-primary" data-action="admin-borrow-action" ' +
+        'data-borrow-action="checkout" data-borrow-id="' + id + '" data-row-version="' + version + '">ส่งมอบ</button>');
+    } else if (record.status === 'CHECKED_OUT' || record.status === 'RETURN_REQUESTED') {
+      buttons.push('<button type="button" class="btn btn-sm ' +
+        (record.status === 'RETURN_REQUESTED' ? 'btn-success' : 'btn-outline-success') +
+        '" data-action="admin-borrow-action" data-borrow-action="return" data-borrow-id="' + id +
+        '" data-row-version="' + version + '">ตรวจรับคืน</button>');
+    }
+    buttons.push('<button type="button" class="btn btn-sm btn-outline-secondary" data-action="open-admin-asset" ' +
+      'data-asset-id="' + escape(record.asset_id) + '">อุปกรณ์</button>');
+    return '<div class="d-flex flex-wrap justify-content-end gap-2">' + buttons.join('') + '</div>';
+  }
+
+  function borrowRow(record) {
+    var effective = record.effective_status || record.status;
+    return '<tr><td><strong class="d-block text-break">' + escape(record.borrow_id) + '</strong>' +
+      '<span class="d-block text-break">' + escape(text(record.user_name)) + '</span>' +
+      '<small class="text-body-secondary text-break">' + escape(text(record.user_email)) + '</small></td>' +
+      '<td><strong class="d-block text-break">' + escape(text(record.asset_name)) + '</strong>' +
+      '<small class="text-body-secondary text-break">' + escape(record.asset_id) + ' · ' +
+      escape(text(record.asset_sku)) + '</small></td>' +
+      '<td><span class="d-block">' + escape(CRS.formatDate(record.borrow_date)) + ' – ' +
+      escape(CRS.formatDate(record.due_date)) + '</span><small class="text-body-secondary">ขอเมื่อ ' +
+      escape(CRS.formatDateTime(record.requested_at)) + '</small></td>' +
+      '<td>' + CRS.statusBadge(effective) + '</td><td class="text-end">' + borrowActions(record) + '</td></tr>';
+  }
+
+  function renderBorrow(context, result) {
+    var items = Array.isArray(result.items) ? result.items : [];
+    context.data.borrow = result;
+    context.query.borrow.page = Number(result.page || 1);
+    CRS.$('#table-body-admin-borrow', context.page).innerHTML = items.map(borrowRow).join('');
+    CRS.setText(CRS.$('#admin-borrow-results-summary', context.page),
+      'พบ ' + Number(result.total || 0).toLocaleString('th-TH') + ' รายการ');
+    CRS.$('#pagination-admin-borrow', context.page).innerHTML = pagination(result, 'admin-borrow-page');
+    syncBorrowQuickFilters(context);
+    setListState(context, 'borrow', items.length ? 'content' : 'empty');
+  }
+
+  async function loadBorrow(context) {
+    var request = ++context.requests.borrow;
+    setListState(context, 'borrow', 'loading');
+    try {
+      var result = await CRS.api.adminListBorrowing(context.query.borrow);
+      if (!alive(context) || request !== context.requests.borrow) return;
+      renderBorrow(context, result || {});
+    } catch (error) {
+      if (!alive(context) || request !== context.requests.borrow) return;
+      setListState(context, 'borrow', 'error', error);
+    }
+  }
+
+  function equipmentItemsMarkup(items) {
+    if (!Array.isArray(items) || !items.length) {
+      return '<p class="small text-body-secondary mb-0">ไม่มีรายการอุปกรณ์ประกอบ</p>';
+    }
+    return '<ul class="small mb-0 ps-3">' + items.map(function (item) {
+      return '<li class="mb-1">' + escape(text(item.item_name)) + ' × ' +
+        Number(item.quantity || item.expected_quantity || 0).toLocaleString('th-TH') +
+        (item.is_required === false ? ' <span class="text-body-secondary">(ไม่บังคับ)</span>' :
+          ' <span class="text-danger">(ต้องครบ)</span>') + '</li>';
+    }).join('') + '</ul>';
+  }
+
+  function borrowSummary(detail, equipment, showEquipmentItems) {
+    var items = showEquipmentItems && equipment ? equipment.included_items : null;
+    return '<div class="card card-body bg-body-tertiary border-0"><dl class="row small mb-0">' +
+      '<dt class="col-4">เลขที่ยืม</dt><dd class="col-8 text-break">' + escape(detail.borrow_id) + '</dd>' +
+      '<dt class="col-4">ผู้ยืม</dt><dd class="col-8 text-break">' + escape(text(detail.user_name)) +
+      '<br><span class="text-body-secondary">' + escape(text(detail.user_email)) + '</span>' +
+      (detail.user_department ? '<br><span class="text-body-secondary">หน่วยงาน: ' +
+        escape(detail.user_department) + '</span>' : '') + '</dd>' +
+      '<dt class="col-4">อุปกรณ์</dt><dd class="col-8 text-break">' + escape(text(detail.asset_name)) +
+      '<br><span class="text-body-secondary">' + escape(detail.asset_id) + '</span></dd>' +
+      '<dt class="col-4">ช่วงยืม</dt><dd class="col-8">' + escape(CRS.formatDate(detail.borrow_date)) + ' – ' +
+      escape(CRS.formatDate(detail.due_date)) + '</dd>' +
+      '<dt class="col-4">วัตถุประสงค์</dt><dd class="col-8 text-break">' + escape(text(detail.purpose)) + '</dd>' +
+      (detail.return_note ? '<dt class="col-4">หมายเหตุแจ้งคืน</dt><dd class="col-8 text-break mb-0">' +
+        escape(detail.return_note) + '</dd>' : '') +
+      '</dl>' + (showEquipmentItems ? '<hr><h3 class="h6">อุปกรณ์ประกอบก่อนส่งมอบ</h3>' +
+        equipmentItemsMarkup(items) : '') + '</div>';
+  }
+
+  function borrowDetailMarkup(detail) {
+    var timeline = [
+      ['ส่งคำขอ', detail.requested_at],
+      ['อนุมัติ', detail.approved_at],
+      ['ส่งมอบ', detail.checkout_at],
+      ['แจ้งคืน', detail.return_requested_at],
+      ['ตรวจรับคืน', detail.return_at]
+    ].filter(function (entry) { return entry[1]; });
+    var notes = [
+      detail.note ? '<dt class="col-sm-4">หมายเหตุคำขอ</dt><dd class="col-sm-8 text-break">' +
+        escape(detail.note) + '</dd>' : '',
+      detail.rejection_reason ? '<dt class="col-sm-4">เหตุผลที่ไม่อนุมัติ</dt><dd class="col-sm-8 text-break text-danger">' +
+        escape(detail.rejection_reason) + '</dd>' : '',
+      detail.return_condition ? '<dt class="col-sm-4">สภาพตอนคืน</dt><dd class="col-sm-8">' +
+        CRS.statusBadge(detail.return_condition) + '</dd>' : '',
+      detail.return_disposition ? '<dt class="col-sm-4">สถานะหลังคืน</dt><dd class="col-sm-8">' +
+        CRS.statusBadge(detail.return_disposition) + '</dd>' : '',
+      detail.return_note ? '<dt class="col-sm-4">หมายเหตุการคืน</dt><dd class="col-sm-8 text-break">' +
+        escape(detail.return_note) + '</dd>' : ''
+    ].join('');
+    var itemMarkup = Array.isArray(detail.items) && detail.items.length
+      ? '<div class="table-responsive mt-3"><table class="table table-sm align-middle mb-0"><thead><tr>' +
+        '<th>อุปกรณ์ประกอบ</th><th class="text-center">คาดหวัง</th><th class="text-center">คืน</th><th>หมายเหตุ</th>' +
+        '</tr></thead><tbody>' + detail.items.map(function (item) {
+          var returned = item.returned_quantity === '' || item.returned_quantity === null ||
+            item.returned_quantity === undefined ? '—' : Number(item.returned_quantity).toLocaleString('th-TH');
+          return '<tr><td class="text-break">' + escape(text(item.item_name)) + '</td><td class="text-center">' +
+            Number(item.expected_quantity || 0).toLocaleString('th-TH') + '</td><td class="text-center">' +
+            returned + '</td><td class="text-break">' + escape(text(item.note)) + '</td></tr>';
+        }).join('') + '</tbody></table></div>'
+      : '<p class="small text-body-secondary mt-3 mb-0">ไม่มี snapshot อุปกรณ์ประกอบสำหรับรายการนี้</p>';
+    return borrowSummary(detail, null, false) +
+      '<div class="card card-body mt-3"><div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">' +
+      '<h3 class="h6 mb-0">สถานะและเวลาดำเนินการ</h3>' + CRS.statusBadge(detail.effective_status || detail.status) +
+      '</div><dl class="row small mb-0">' + timeline.map(function (entry) {
+        return '<dt class="col-sm-4">' + escape(entry[0]) + '</dt><dd class="col-sm-8">' +
+          escape(CRS.formatDateTime(entry[1])) + '</dd>';
+      }).join('') + notes + '</dl>' + itemMarkup + '</div>';
+  }
+
+  async function openBorrowDetail(context, borrowId) {
+    if (!alive(context) || !/^BR-\d{6}$/.test(value(borrowId).toUpperCase())) return;
+    try {
+      var detail = await CRS.withLoading(function () { return CRS.api.getBorrowDetail(borrowId); },
+        'กำลังโหลดรายละเอียดรายการยืม…');
+      if (!alive(context)) return;
+      CRS.$('#admin-borrow-detail-content', context.page).innerHTML = borrowDetailMarkup(detail);
+      CRS.setText(CRS.$('#admin-borrow-detail-title', context.page),
+        'รายละเอียดการยืม ' + detail.borrow_id);
+      CRS.openModal('#modal-admin-borrow-detail');
+    } catch (error) {
+      CRS.handleError(error);
+    }
+  }
+
+  function returnChecklist(items) {
+    if (!Array.isArray(items) || !items.length) {
+      return '<div class="alert alert-secondary mb-0">รายการนี้ไม่มีอุปกรณ์ประกอบที่ต้องตรวจนับ</div>';
+    }
+    return items.map(function (item, index) {
+      var expected = Math.max(0, Number(item.expected_quantity || 0));
+      return '<article class="card card-body" data-return-item data-borrow-item-id="' +
+        escape(item.borrow_item_id) + '"><div class="d-flex justify-content-between gap-3 mb-3"><div>' +
+        '<strong class="text-break">' + escape(text(item.item_name)) + '</strong>' +
+        '<div class="small text-body-secondary">คาดหวัง ' + expected.toLocaleString('th-TH') + ' ชิ้น · ' +
+        (item.is_required === false ? 'ไม่บังคับ' : 'ต้องครบ') + '</div></div><span class="badge ' +
+        (item.is_required === false ? 'text-bg-secondary' : 'text-bg-danger') + '">' +
+        (item.is_required === false ? 'เสริม' : 'จำเป็น') + '</span></div><div class="row g-3">' +
+        '<div class="col-12 col-sm-4"><label class="form-label" for="return-item-quantity-' + index +
+        '">จำนวนที่คืน</label><input id="return-item-quantity-' + index + '" type="number" class="form-control" ' +
+        'data-returned-quantity min="0" max="' + expected + '" step="1" value="' + expected +
+        '" required><div class="invalid-feedback">ระบุจำนวน 0–' + expected.toLocaleString('th-TH') + '</div></div>' +
+        '<div class="col-12 col-sm-8"><label class="form-label" for="return-item-note-' + index +
+        '">หมายเหตุรายการ</label><input id="return-item-note-' + index + '" type="text" class="form-control" ' +
+        'data-return-item-note maxlength="500" autocomplete="off" placeholder="เช่น สายขาด 1 เส้น"></div>' +
+        '</div></article>';
+    }).join('');
+  }
+
+  function returnedItemsFromForm(form) {
+    return CRS.$$('[data-return-item]', form).map(function (card) {
+      return {
+        borrow_item_id: value(card.dataset.borrowItemId),
+        returned_quantity: Number(CRS.$('[data-returned-quantity]', card).value),
+        note: value(CRS.$('[data-return-item-note]', card).value).trim()
+      };
+    });
+  }
+
+  function requiredItemsComplete(form) {
+    var detail = form.__borrowDetail;
+    var byId = Object.create(null);
+    (detail && detail.items || []).forEach(function (item) { byId[item.borrow_item_id] = item; });
+    return CRS.$$('[data-return-item]', form).every(function (card) {
+      var item = byId[card.dataset.borrowItemId] || {};
+      if (item.is_required === false) return true;
+      return Number(CRS.$('[data-returned-quantity]', card).value) === Number(item.expected_quantity || 0);
+    });
+  }
+
+  function allItemsComplete(form) {
+    var detail = form.__borrowDetail;
+    var byId = Object.create(null);
+    (detail && detail.items || []).forEach(function (item) { byId[item.borrow_item_id] = item; });
+    return CRS.$$('[data-return-item]', form).every(function (card) {
+      var item = byId[card.dataset.borrowItemId] || {};
+      return Number(CRS.$('[data-returned-quantity]', card).value) === Number(item.expected_quantity || 0);
+    });
+  }
+
+  function syncReturnRules(form) {
+    if (!form) return;
+    var condition = value(form.elements.condition.value);
+    var disposition = form.elements.disposition;
+    var requiredComplete = requiredItemsComplete(form);
+    var everyItemComplete = allItemsComplete(form);
+    var allowed = (RETURN_MATRIX[condition] || []).slice();
+    if (!requiredComplete) {
+      allowed = allowed.filter(function (status) { return status !== 'AVAILABLE'; });
+    }
+    Array.prototype.forEach.call(disposition.options, function (option) {
+      if (!option.value) return;
+      option.disabled = allowed.indexOf(option.value) === -1;
+    });
+    if (disposition.value && allowed.indexOf(disposition.value) === -1) disposition.value = '';
+    if (!disposition.value && allowed.length === 1) disposition.value = allowed[0];
+    var conditionError = '';
+    if (!requiredComplete && condition && ['MISSING_ITEMS', 'LOST'].indexOf(condition) === -1) {
+      conditionError = 'อุปกรณ์ประกอบที่จำเป็นไม่ครบ กรุณาเลือก “อุปกรณ์ประกอบไม่ครบ” หรือ “สูญหาย”';
+    } else if (condition === 'MISSING_ITEMS' && everyItemComplete) {
+      conditionError = 'จำนวนอุปกรณ์ประกอบครบ กรุณาเลือกผลการตรวจสภาพอื่น';
+    }
+    form.elements.condition.setCustomValidity(conditionError);
+    var conditionFeedback = form.querySelector('[data-field-error="condition"]');
+    if (conditionFeedback) conditionFeedback.textContent = conditionError || 'กรุณาเลือกผลการตรวจสภาพ';
+    var dispositionFeedback = form.querySelector('[data-field-error="disposition"]');
+    if (dispositionFeedback) dispositionFeedback.textContent = 'กรุณาเลือกสถานะหลังคืนที่สอดคล้องกับผลการตรวจ';
+    var abnormal = Boolean(condition && condition !== 'NORMAL');
+    form.elements.note.required = abnormal;
+    form.elements.note.setAttribute('aria-required', abnormal ? 'true' : 'false');
+    var noteFeedback = form.querySelector('[data-field-error="note"]');
+    if (noteFeedback) noteFeedback.textContent = abnormal ? 'กรุณาระบุรายละเอียดเมื่อสภาพไม่ปกติ' : '';
+  }
+
+  async function openBorrowAction(context, action, borrowId) {
+    if (!alive(context) || !/^BR-\d{6}$/.test(value(borrowId).toUpperCase())) return;
+    var needsEquipment = action === 'approve' || action === 'checkout';
+    try {
+      var detail = await CRS.withLoading(function () {
+        return CRS.api.getBorrowDetail(borrowId);
+      }, 'กำลังโหลดรายละเอียดรายการยืม…');
+      if (!alive(context)) return;
+      var equipment = null;
+      if (needsEquipment) {
+        equipment = await CRS.withLoading(function () {
+          return CRS.api.getEquipmentDetail(detail.asset_id);
+        }, 'กำลังโหลดอุปกรณ์ประกอบ…');
+        if (!alive(context)) return;
+      }
+      var form = CRS.$('#form-admin-' + action, context.page);
+      prepareForm(form);
+      form.elements.borrow_id.value = detail.borrow_id;
+      form.elements.expected_version.value = detail.row_version;
+      if (form.elements.command_id) form.elements.command_id.value = '';
+      form.__borrowDetail = detail;
+      context.activeBorrow = detail;
+      if (action === 'approve' || action === 'checkout') {
+        CRS.$('#admin-' + action + '-summary', context.page).innerHTML =
+          borrowSummary(detail, equipment, true);
+      } else if (action === 'reject') {
+        CRS.$('#admin-reject-summary', context.page).innerHTML = borrowSummary(detail, null, false);
+        CRS.setText(CRS.$('#admin-reject-title', context.page), 'ไม่อนุมัติคำขอ ' + detail.borrow_id);
+      } else if (action === 'return') {
+        CRS.$('#admin-return-summary', context.page).innerHTML = borrowSummary(detail, null, false);
+        CRS.$('#admin-return-item-checklist', context.page).innerHTML = returnChecklist(detail.items || []);
+        syncReturnRules(form);
+      }
+      CRS.openModal('#modal-admin-' + action);
+    } catch (error) {
+      CRS.handleError(error);
+    }
+  }
+
+  function borrowMutationSpec(action, form) {
+    var borrowId = value(form.elements.borrow_id.value);
+    var version = Number(form.elements.expected_version.value);
+    var base = { borrow_id: borrowId, expected_version: version };
+    if (action === 'approve') {
+      return { method: 'adminApproveBorrow', key: 'admin-approve:' + borrowId + ':' + version,
+        payload: base, message: 'กำลังอนุมัติคำขอ…', success: 'อนุมัติคำขอเรียบร้อยแล้ว' };
+    }
+    if (action === 'reject') {
+      base.reason = value(form.elements.reason.value).trim();
+      return { method: 'adminRejectBorrow', key: 'admin-reject:' + borrowId + ':' + version,
+        payload: base, message: 'กำลังบันทึกการไม่อนุมัติ…', success: 'บันทึกการไม่อนุมัติเรียบร้อยแล้ว' };
+    }
+    if (action === 'checkout') {
+      return { method: 'adminCheckoutBorrow', key: 'admin-checkout:' + borrowId + ':' + version,
+        payload: base, message: 'กำลังบันทึกการส่งมอบ…', success: 'ส่งมอบอุปกรณ์เรียบร้อยแล้ว' };
+    }
+    base.condition = value(form.elements.condition.value);
+    base.disposition = value(form.elements.disposition.value);
+    base.note = value(form.elements.note.value).trim();
+    base.items = returnedItemsFromForm(form);
+    return { method: 'adminCompleteReturn', key: 'admin-return:' + borrowId + ':' + version,
+      payload: base, message: 'กำลังบันทึกการตรวจรับคืน…', success: 'ตรวจรับคืนอุปกรณ์เรียบร้อยแล้ว' };
+  }
+
+  async function submitBorrowAction(context, action, form) {
+    CRS.clearFieldErrors(form);
+    setFormError(form, null);
+    form.classList.add('was-validated');
+    if (action === 'return') syncReturnRules(form);
+    if (!form.checkValidity()) return;
+    var spec = borrowMutationSpec(action, form);
+    if (action === 'return') {
+      var expectedItems = form.__borrowDetail && Array.isArray(form.__borrowDetail.items)
+        ? form.__borrowDetail.items.length : 0;
+      var submittedIds = Object.create(null);
+      spec.payload.items.forEach(function (item) { submittedIds[item.borrow_item_id] = true; });
+      if (spec.payload.items.length !== expectedItems || Object.keys(submittedIds).length !== expectedItems) {
+        var itemsFeedback = form.querySelector('[data-field-error="items"]');
+        if (itemsFeedback) itemsFeedback.textContent = 'รายการตรวจไม่ครบ กรุณาปิดหน้าต่างแล้วโหลดรายละเอียดใหม่';
+        CRS.toast('รายการตรวจอุปกรณ์ประกอบไม่ครบ กรุณาโหลดรายละเอียดใหม่', 'danger');
+        return;
+      }
+    }
+    var submit = form.querySelector('[type="submit"]');
+    submit.disabled = true;
+    try {
+      await CRS.withLoading(function () {
+        return CRS.runMutation(spec.key, spec.method, spec.payload);
+      }, spec.message);
+      bootstrap.Modal.getOrCreateInstance(form.closest('.modal')).hide();
+      CRS.toast(spec.success, 'success');
+      await Promise.all([loadBorrow(context), loadAdminSummary(context, true)]);
+    } catch (error) {
+      setFormError(form, error);
+      applyNamedFeedback(form, error);
+      CRS.handleError(error, { form: form });
+    } finally {
+      submit.disabled = false;
+    }
+  }
+
+  function userRow(record) {
+    return '<tr><td><strong class="d-block text-break">' + escape(text(record.name)) + '</strong>' +
+      '<small class="d-block text-body-secondary text-break">' + escape(record.email) + '</small>' +
+      '<small class="text-body-secondary">' + escape(record.user_id) + '</small></td>' +
+      '<td class="text-break">' + escape(text(record.department)) + '</td><td>' +
+      CRS.statusBadge(record.role) + '</td><td>' + CRS.statusBadge(record.status) + '</td>' +
+      '<td>' + escape(CRS.formatDateTime(record.last_login_at)) + '</td>' +
+      '<td class="text-end"><button type="button" class="btn btn-sm btn-outline-primary" ' +
+      'data-action="edit-admin-user" data-user-id="' + escape(record.user_id) + '">แก้ไข</button></td></tr>';
+  }
+
+  function renderUsers(context, result) {
+    var items = Array.isArray(result.items) ? result.items : [];
+    context.data.users = result;
+    context.query.users.page = Number(result.page || 1);
+    CRS.$('#table-body-admin-users', context.page).innerHTML = items.map(userRow).join('');
+    CRS.$('#pagination-admin-users', context.page).innerHTML = pagination(result, 'admin-users-page');
+    setListState(context, 'users', items.length ? 'content' : 'empty');
+  }
+
+  async function loadUsers(context) {
+    var request = ++context.requests.users;
+    setListState(context, 'users', 'loading');
+    try {
+      var result = await CRS.api.adminListUsers(context.query.users);
+      if (!alive(context) || request !== context.requests.users) return;
+      renderUsers(context, result || {});
+    } catch (error) {
+      if (!alive(context) || request !== context.requests.users) return;
+      setListState(context, 'users', 'error', error);
+    }
+  }
+
+  function findPageRecord(result, field, id) {
+    return (result && Array.isArray(result.items) ? result.items : []).find(function (record) {
+      return value(record[field]) === value(id);
+    }) || null;
+  }
+
+  function openUserForm(context, record) {
+    var form = CRS.$('#form-admin-user', context.page);
+    prepareForm(form);
+    context.editingUser = record || null;
+    CRS.setText(CRS.$('#admin-user-form-title', context.page), record ? 'แก้ไขผู้ใช้' : 'เพิ่มผู้ใช้');
+    var session = CRS.state.bootstrap.session;
+    var editingSelf = Boolean(record && record.user_id === session.user_id);
+    form.elements.email.readOnly = editingSelf;
+    form.elements.email.title = editingSelf ?
+      'ไม่สามารถเปลี่ยนอีเมลบัญชีที่กำลังใช้งานจากหน้าจอนี้ได้' : '';
+    if (record) {
+      form.elements.user_id.value = record.user_id;
+      form.elements.expected_version.value = record.row_version;
+      form.elements.email.value = text(record.email, '');
+      form.elements.name.value = text(record.name, '');
+      form.elements.department.value = text(record.department, '');
+      form.elements.role.value = record.role;
+      form.elements.status.value = record.status;
+    } else {
+      form.elements.role.value = 'USER';
+      form.elements.status.value = 'ACTIVE';
+    }
+    CRS.openModal('#modal-admin-user');
+  }
+
+  async function submitUser(context, form) {
+    CRS.clearFieldErrors(form);
+    setFormError(form, null);
+    form.classList.add('was-validated');
+    if (!form.checkValidity()) return;
+    var data = formData(form);
+    var userId = value(data.get('user_id'));
+    var version = Number(data.get('expected_version'));
+    var payload = {
+      email: value(data.get('email')).trim().toLowerCase(),
+      name: value(data.get('name')).trim(),
+      department: value(data.get('department')).trim(),
+      role: value(data.get('role')),
+      status: value(data.get('status'))
+    };
+    var editing = Boolean(userId);
+    if (editing) {
+      payload.user_id = userId;
+      payload.expected_version = version;
+    }
+    if (editing && context.editingUser && context.editingUser.role === 'ADMIN' &&
+      context.editingUser.status === 'ACTIVE' && (payload.role !== 'ADMIN' || payload.status !== 'ACTIVE')) {
+      var confirmed = await CRS.confirm({
+        title: 'ยืนยันการเปลี่ยนสิทธิ์ผู้ดูแล',
+        message: 'ผู้ใช้นี้จะไม่สามารถเข้าศูนย์ผู้ดูแลระบบด้วยสิทธิ์เดิมได้',
+        confirmText: 'ยืนยันการเปลี่ยนแปลง',
+        tone: 'danger'
+      });
+      if (!confirmed) return;
+    } else if (editing && payload.status === 'INACTIVE' && context.editingUser.status !== 'INACTIVE') {
+      var deactivate = await CRS.confirm({
+        title: 'ยืนยันการปิดใช้งาน',
+        message: 'ผู้ใช้นี้จะไม่สามารถเข้าใช้ระบบได้จนกว่าจะเปิดใช้งานอีกครั้ง',
+        confirmText: 'ปิดใช้งาน',
+        tone: 'danger'
+      });
+      if (!deactivate) return;
+    }
+    var method = editing ? 'adminUpdateUser' : 'adminCreateUser';
+    var key = editing ? 'admin-user-update:' + userId + ':' + version :
+      'admin-user-create:' + value(form.dataset.createKey || (form.dataset.createKey = CRS.commandId()));
+    var submit = form.querySelector('[type="submit"]');
+    submit.disabled = true;
+    try {
+      var result = await CRS.withLoading(function () {
+        return CRS.runMutation(key, method, payload);
+      }, editing ? 'กำลังบันทึกผู้ใช้…' : 'กำลังเพิ่มผู้ใช้…');
+      bootstrap.Modal.getOrCreateInstance(form.closest('.modal')).hide();
+      CRS.toast(editing ? 'แก้ไขผู้ใช้เรียบร้อยแล้ว' : 'เพิ่มผู้ใช้เรียบร้อยแล้ว', 'success');
+      delete form.dataset.createKey;
+      var session = CRS.state.bootstrap.session;
+      if (result.user_id === session.user_id && (result.role !== 'ADMIN' || result.status !== 'ACTIVE')) {
+        global.setTimeout(function () { global.location.reload(); }, 600);
+        return;
+      }
+      await loadUsers(context);
+    } catch (error) {
+      setFormError(form, error);
+      applyNamedFeedback(form, error);
+      CRS.handleError(error, { form: form });
+    } finally {
+      submit.disabled = false;
+    }
+  }
+
+  function categoryRow(record) {
+    return '<tr><td>' + Number(record.sort_order || 0).toLocaleString('th-TH') + '</td>' +
+      '<td><strong class="d-block text-break">' + escape(text(record.category_name)) + '</strong>' +
+      '<small class="text-body-secondary">' + escape(record.category_id) + '</small></td>' +
+      '<td><code>' + escape(record.prefix) + '</code></td><td>' + CRS.statusBadge(record.status) + '</td>' +
+      '<td>' + escape(CRS.formatDateTime(record.updated_at)) + '</td><td class="text-end">' +
+      '<button type="button" class="btn btn-sm btn-outline-primary" data-action="edit-admin-category" ' +
+      'data-category-id="' + escape(record.category_id) + '">แก้ไข</button></td></tr>';
+  }
+
+  function renderCategories(context, result) {
+    var items = Array.isArray(result.items) ? result.items : [];
+    context.data.categories = result;
+    context.query.categories.page = Number(result.page || 1);
+    CRS.$('#table-body-admin-categories', context.page).innerHTML = items.map(categoryRow).join('');
+    CRS.$('#pagination-admin-categories', context.page).innerHTML = pagination(result, 'admin-categories-page');
+    setListState(context, 'categories', items.length ? 'content' : 'empty');
+  }
+
+  async function loadCategories(context) {
+    var request = ++context.requests.categories;
+    setListState(context, 'categories', 'loading');
+    try {
+      var result = await CRS.api.adminListCategories(context.query.categories);
+      if (!alive(context) || request !== context.requests.categories) return;
+      renderCategories(context, result || {});
+    } catch (error) {
+      if (!alive(context) || request !== context.requests.categories) return;
+      setListState(context, 'categories', 'error', error);
+    }
+  }
+
+  function openCategoryForm(context, record) {
+    var form = CRS.$('#form-admin-category', context.page);
+    prepareForm(form);
+    context.editingCategory = record || null;
+    CRS.setText(CRS.$('#admin-category-form-title', context.page), record ? 'แก้ไขหมวดหมู่' : 'เพิ่มหมวดหมู่');
+    if (record) {
+      form.elements.category_id.value = record.category_id;
+      form.elements.expected_version.value = record.row_version;
+      form.elements.category_name.value = text(record.category_name, '');
+      form.elements.prefix.value = text(record.prefix, '');
+      form.elements.sort_order.value = record.sort_order;
+      form.elements.status.value = record.status;
+    } else {
+      form.elements.status.value = 'ACTIVE';
+      form.elements.sort_order.value = '';
+    }
+    CRS.openModal('#modal-admin-category');
+  }
+
+  function syncBootstrapCategory(record) {
+    var bootstrapData = CRS.state && CRS.state.bootstrap;
+    if (!bootstrapData || !record || !record.category_id) return;
+    var categories = Array.isArray(bootstrapData.categories) ? bootstrapData.categories.slice() : [];
+    categories = categories.filter(function (category) {
+      return category.category_id !== record.category_id;
+    });
+    if (record.status === 'ACTIVE') {
+      categories.push({
+        category_id: record.category_id,
+        category_name: record.category_name,
+        prefix: record.prefix,
+        sort_order: record.sort_order,
+        status: record.status
+      });
+    }
+    categories.sort(function (left, right) {
+      var order = Number(left.sort_order || 0) - Number(right.sort_order || 0);
+      return order || value(left.category_name).localeCompare(value(right.category_name), 'th');
+    });
+    bootstrapData.categories = categories;
+  }
+
+  async function submitCategory(context, form) {
+    CRS.clearFieldErrors(form);
+    setFormError(form, null);
+    form.classList.add('was-validated');
+    if (!form.checkValidity()) return;
+    var data = formData(form);
+    var categoryId = value(data.get('category_id'));
+    var version = Number(data.get('expected_version'));
+    var payload = {
+      category_name: value(data.get('category_name')).trim(),
+      prefix: value(data.get('prefix')).trim().toUpperCase(),
+      status: value(data.get('status'))
+    };
+    if (data.get('sort_order') !== '') payload.sort_order = Number(data.get('sort_order'));
+    var editing = Boolean(categoryId);
+    if (editing) {
+      payload.category_id = categoryId;
+      payload.expected_version = version;
+      if (payload.status === 'INACTIVE' && context.editingCategory.status !== 'INACTIVE') {
+        var confirmed = await CRS.confirm({
+          title: 'ยืนยันการปิดหมวดหมู่',
+          message: 'หมวดหมู่นี้จะไม่ปรากฏสำหรับการเลือกใหม่ แต่อุปกรณ์เดิมยังคงอ้างอิงข้อมูลได้',
+          confirmText: 'ปิดใช้งาน',
+          tone: 'warning'
+        });
+        if (!confirmed) return;
+      }
+    }
+    var method = editing ? 'adminUpdateCategory' : 'adminCreateCategory';
+    var key = editing ? 'admin-category-update:' + categoryId + ':' + version :
+      'admin-category-create:' + value(form.dataset.createKey || (form.dataset.createKey = CRS.commandId()));
+    var submit = form.querySelector('[type="submit"]');
+    submit.disabled = true;
+    try {
+      var result = await CRS.withLoading(function () { return CRS.runMutation(key, method, payload); },
+        editing ? 'กำลังบันทึกหมวดหมู่…' : 'กำลังเพิ่มหมวดหมู่…');
+      syncBootstrapCategory(result);
+      bootstrap.Modal.getOrCreateInstance(form.closest('.modal')).hide();
+      CRS.toast(editing ? 'แก้ไขหมวดหมู่เรียบร้อยแล้ว' : 'เพิ่มหมวดหมู่เรียบร้อยแล้ว', 'success');
+      delete form.dataset.createKey;
+      await loadCategories(context);
+    } catch (error) {
+      setFormError(form, error);
+      applyNamedFeedback(form, error);
+      CRS.handleError(error, { form: form });
+    } finally {
+      submit.disabled = false;
+    }
+  }
+
+  function historyReference(record) {
+    var parts = [record.entity_type, record.entity_id, record.asset_id, record.borrow_id].filter(Boolean);
+    return parts.length ? parts.map(escape).join('<br>') : '—';
+  }
+
+  function historyStatuses(record) {
+    if (!record.old_status && !record.new_status) return '—';
+    return (record.old_status ? CRS.statusBadge(record.old_status) : '<span class="text-body-secondary">เริ่มต้น</span>') +
+      ' <i class="bi bi-arrow-right mx-1" aria-hidden="true"></i> ' +
+      (record.new_status ? CRS.statusBadge(record.new_status) : '<span class="text-body-secondary">—</span>');
+  }
+
+  function historyRow(record) {
+    return '<tr><td><time class="d-block" datetime="' + escape(record.timestamp) + '">' +
+      escape(CRS.formatDateTime(record.timestamp)) + '</time><small class="text-body-secondary text-break">' +
+      escape(text(record.user_email)) + '</small></td><td><strong>' +
+      escape(CRS.actionLabel(record.action)) + '</strong><small class="d-block text-body-secondary">' +
+      escape(record.action) + '</small></td><td class="small text-break">' + historyReference(record) + '</td>' +
+      '<td class="text-nowrap">' + historyStatuses(record) + '</td><td class="text-break">' +
+      escape(text(record.note)) + '</td></tr>';
+  }
+
+  function renderHistory(context, result) {
+    var items = Array.isArray(result.items) ? result.items : [];
+    context.data.history = result;
+    context.query.history.page = Number(result.page || 1);
+    CRS.$('#table-body-admin-history', context.page).innerHTML = items.map(historyRow).join('');
+    CRS.$('#pagination-admin-history', context.page).innerHTML = pagination(result, 'admin-history-page');
+    setListState(context, 'history', items.length ? 'content' : 'empty');
+  }
+
+  async function loadHistory(context) {
+    var request = ++context.requests.history;
+    setListState(context, 'history', 'loading');
+    try {
+      var result = await CRS.api.adminListHistory(context.query.history);
+      if (!alive(context) || request !== context.requests.history) return;
+      renderHistory(context, result || {});
+    } catch (error) {
+      if (!alive(context) || request !== context.requests.history) return;
+      setListState(context, 'history', 'error', error);
+    }
+  }
+
+  function operationRow(record) {
+    return '<tr><td><code class="text-break">' + escape(record.operation_id) + '</code>' +
+      (record.resource_id ? '<small class="d-block text-body-secondary text-break">ไฟล์ ' +
+        escape(record.resource_id) + '</small>' : '') + '</td><td><strong>' +
+      escape(CRS.actionLabel(record.action)) + '</strong><small class="d-block text-body-secondary text-break">' +
+      escape(record.entity_type) + ' · ' + escape(text(record.entity_id)) + '</small></td>' +
+      '<td class="text-break">' + escape(text(record.actor_email)) + '</td><td>' +
+      escape(CRS.formatDateTime(record.started_at)) + '</td><td>' + CRS.statusBadge(record.status) + '</td>' +
+      '<td class="text-end"><button type="button" class="btn btn-sm ' +
+      (record.status === 'STARTED' ? 'btn-warning' : 'btn-outline-primary') +
+      '" data-action="view-admin-operation" data-operation-id="' + escape(record.operation_id) + '">' +
+      (record.status === 'STARTED' ? 'ตรวจสอบ' : 'รายละเอียด') + '</button></td></tr>';
+  }
+
+  function renderOperations(context, result) {
+    var items = Array.isArray(result.items) ? result.items : [];
+    context.data.operations = result;
+    context.query.operations.page = Number(result.page || 1);
+    CRS.$('#table-body-admin-operations', context.page).innerHTML = items.map(operationRow).join('');
+    CRS.$('#pagination-admin-operations', context.page).innerHTML = pagination(result, 'admin-operations-page');
+    setListState(context, 'operations', items.length ? 'content' : 'empty');
+  }
+
+  async function loadOperations(context) {
+    var request = ++context.requests.operations;
+    setListState(context, 'operations', 'loading');
+    try {
+      var result = await CRS.api.adminListOperations(context.query.operations);
+      if (!alive(context) || request !== context.requests.operations) return;
+      renderOperations(context, result || {});
+    } catch (error) {
+      if (!alive(context) || request !== context.requests.operations) return;
+      setListState(context, 'operations', 'error', error);
+    }
+  }
+
+  function setOperationDetailState(context, state, error) {
+    var modal = CRS.$('#modal-admin-operation', context.page);
+    setVisible(CRS.$('#admin-operation-detail-loading', modal), state === 'loading');
+    setVisible(CRS.$('#admin-operation-detail-error', modal), state === 'error');
+    setVisible(CRS.$('#admin-operation-detail-content', modal), state === 'content');
+    if (state === 'error') CRS.setText(CRS.$('#admin-operation-detail-error', modal),
+      (error && error.message) || 'ไม่สามารถโหลดรายละเอียด Operation ได้');
+  }
+
+  function renderOperationDetail(context, operation) {
+    context.currentOperation = operation;
+    var summary = CRS.$('#admin-operation-detail-summary', context.page);
+    var rows = [
+      ['Operation ID', operation.operation_id], ['Action', operation.action],
+      ['Entity', [operation.entity_type, operation.entity_id].filter(Boolean).join(' · ')],
+      ['Asset ID', operation.asset_id], ['Resource ID', operation.resource_id],
+      ['ผู้ดำเนินการ', operation.actor_email], ['สถานะ', CRS.statusLabel(operation.status)],
+      ['เริ่ม', CRS.formatDateTime(operation.started_at)],
+      ['เสร็จ/ยกเลิก', CRS.formatDateTime(operation.completed_at)]
+    ];
+    summary.innerHTML = rows.map(function (row) {
+      return '<dt class="col-sm-4 text-body-secondary">' + escape(row[0]) + '</dt><dd class="col-sm-8 text-break">' +
+        escape(text(row[1])) + '</dd>';
+    }).join('');
+    ['payload', 'before', 'result'].forEach(function (field) {
+      CRS.setText(CRS.$('[data-operation-json="' + field + '"]', context.page), safeJson(operation[field]));
+    });
+    var reconcile = CRS.$('[data-action="reconcile-operation"]', context.page);
+    var abort = CRS.$('[data-action="open-abort-operation"]', context.page);
+    reconcile.dataset.operationId = operation.operation_id;
+    abort.dataset.operationId = operation.operation_id;
+    setVisible(reconcile, Boolean(operation.can_reconcile));
+    setVisible(abort, Boolean(operation.can_abort && operation.action === 'UPLOAD_ASSET_IMAGE'));
+    setVisible(CRS.$('#admin-operation-action-error', context.page), false);
+    setOperationDetailState(context, 'content');
+  }
+
+  async function openOperation(context, operationId) {
+    if (!/^[A-Za-z0-9_-]{8,100}$/.test(value(operationId))) return;
+    var request = ++context.requests.operationDetail;
+    context.currentOperation = null;
+    setOperationDetailState(context, 'loading');
+    CRS.openModal('#modal-admin-operation');
+    try {
+      var operation = await CRS.api.adminGetOperationDetail(operationId);
+      if (!alive(context) || request !== context.requests.operationDetail) return;
+      renderOperationDetail(context, operation);
+    } catch (error) {
+      if (!alive(context) || request !== context.requests.operationDetail) return;
+      setOperationDetailState(context, 'error', error);
+    }
+  }
+
+  async function reconcileOperation(context, button) {
+    var operation = context.currentOperation;
+    if (!operation || !operation.can_reconcile || operation.operation_id !== button.dataset.operationId) return;
+    var confirmed = await CRS.confirm({
+      title: 'กู้คืน Operation',
+      message: 'ระบบจะตรวจหลักฐานและทำคำสั่งเดิมต่อด้วย Operation ID เดิม โดยจะหยุดหากข้อมูลปัจจุบันไม่ตรงกัน',
+      confirmText: 'เริ่มกู้คืน',
+      tone: 'warning'
+    });
+    if (!confirmed) return;
+    button.disabled = true;
+    var errorBox = CRS.$('#admin-operation-action-error', context.page);
+    setVisible(errorBox, false);
+    try {
+      /* Operation ID is the durable idempotency key; this endpoint intentionally accepts that ID directly. */
+      var result = await CRS.withLoading(function () {
+        return CRS.api.adminReconcileOperation(operation.operation_id);
+      }, 'กำลังกู้คืน Operation…');
+      if (!alive(context)) return;
+      renderOperationDetail(context, result);
+      CRS.toast('กู้คืน Operation เรียบร้อยแล้ว', 'success');
+      await Promise.all([loadOperations(context), loadBorrow(context), loadAdminSummary(context, true)]);
+    } catch (error) {
+      errorBox.textContent = error.message || 'กู้คืน Operation ไม่สำเร็จ';
+      setVisible(errorBox, true);
+      CRS.handleError(error);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  function openAbortForm(context, button) {
+    var operation = context.currentOperation;
+    if (!operation || operation.operation_id !== button.dataset.operationId ||
+      !operation.can_abort || operation.action !== 'UPLOAD_ASSET_IMAGE') return;
+    var form = CRS.$('#form-admin-abort-operation', context.page);
+    prepareForm(form);
+    form.elements.operation_id.value = operation.operation_id;
+    var detailModal = CRS.$('#modal-admin-operation', context.page);
+    var showAbort = function () { if (alive(context)) CRS.openModal('#modal-admin-abort-operation'); };
+    if (detailModal.classList.contains('show')) {
+      detailModal.addEventListener('hidden.bs.modal', showAbort, { once: true });
+      bootstrap.Modal.getOrCreateInstance(detailModal).hide();
+    } else {
+      showAbort();
+    }
+  }
+
+  async function submitAbort(context, form) {
+    CRS.clearFieldErrors(form);
+    setFormError(form, null);
+    form.classList.add('was-validated');
+    if (!form.checkValidity()) return;
+    var operationId = value(form.elements.operation_id.value);
+    var reason = value(form.elements.reason.value).trim();
+    var confirmed = await CRS.confirm({
+      title: 'ยืนยันยกเลิก Operation อัปโหลดภาพ',
+      message: 'ระบบจะยกเลิกเฉพาะ Operation ที่ยังไม่เปลี่ยนอุปกรณ์ และย้ายไฟล์ของคำสั่งนี้ไปถังขยะเมื่อยืนยันได้อย่างปลอดภัย',
+      confirmText: 'ยืนยันยกเลิก',
+      tone: 'danger'
+    });
+    if (!confirmed) return;
+    var submit = form.querySelector('[type="submit"]');
+    submit.disabled = true;
+    try {
+      var result = await CRS.withLoading(function () {
+        return CRS.runMutation('admin-operation-abort:' + operationId, 'adminAbortOperation', {
+          operation_id: operationId,
+          reason: reason
+        });
+      }, 'กำลังยกเลิก Operation อย่างปลอดภัย…');
+      bootstrap.Modal.getOrCreateInstance(form.closest('.modal')).hide();
+      var needsCleanup = result && result.result && result.result.orphan_cleanup_required;
+      CRS.toast(needsCleanup ?
+        'ยกเลิก Operation แล้ว แต่ควรตรวจสอบไฟล์กำพร้าใน Drive เพิ่มเติม' :
+        'ยกเลิก Operation เรียบร้อยแล้ว', needsCleanup ? 'warning' : 'success');
+      await loadOperations(context);
+    } catch (error) {
+      setFormError(form, error);
+      applyNamedFeedback(form, error);
+      CRS.handleError(error, { form: form });
+    } finally {
+      submit.disabled = false;
+    }
+  }
+
+  function integrityIssueRow(issue) {
+    return '<tr><td>' + CRS.statusBadge(issue.severity) + '<div class="small text-body-secondary">' +
+      escape(issue.code) + '</div></td><td class="text-break">' + escape(text(issue.sheet)) +
+      '<div class="small text-body-secondary">' + escape(text(issue.record_id)) +
+      (issue.row_number ? ' · แถว ' + Number(issue.row_number).toLocaleString('th-TH') : '') + '</div></td>' +
+      '<td class="text-break">' + escape(text(issue.message)) +
+      (issue.details && Object.keys(issue.details).length ? '<details class="mt-1"><summary class="small">รายละเอียด</summary>' +
+        '<pre class="small text-wrap mb-0 mt-1">' + escape(safeJson(issue.details)) + '</pre></details>' : '') +
+      '</td></tr>';
+  }
+
+  function renderIntegrity(context, audit) {
+    context.integrityLoaded = true;
+    var summary = audit.summary || {};
+    var host = CRS.$('#admin-integrity-result', context.page);
+    var sheetCounts = audit.sheet_counts || {};
+    var countMarkup = Object.keys(sheetCounts).sort().map(function (sheet) {
+      return '<span class="badge text-bg-light border me-1 mb-1">' + escape(sheet) + ' ' +
+        Number(sheetCounts[sheet] || 0).toLocaleString('th-TH') + '</span>';
+    }).join('');
+    var issues = Array.isArray(audit.issues) ? audit.issues : [];
+    host.innerHTML = '<div class="alert ' + (audit.passed ? 'alert-success' : 'alert-danger') + '">' +
+      '<div class="d-flex flex-wrap align-items-center justify-content-between gap-2"><strong>' +
+      (audit.passed ? 'ข้อมูลผ่านการตรวจสอบ' : 'พบปัญหาที่ต้องตรวจสอบ') + '</strong><time datetime="' +
+      escape(audit.generated_at) + '">' + escape(CRS.formatDateTime(audit.generated_at)) + '</time></div>' +
+      '<div class="small mt-2">ข้อผิดพลาด ' + Number(summary.errors || 0).toLocaleString('th-TH') +
+      ' · คำเตือน ' + Number(summary.warnings || 0).toLocaleString('th-TH') +
+      (summary.truncated ? ' · แสดงเฉพาะ ' + Number(summary.returned_issues || issues.length).toLocaleString('th-TH') +
+        ' รายการแรก' : '') + '</div></div><div class="mb-3">' + countMarkup + '</div>' +
+      (issues.length ? '<div class="table-responsive"><table class="table table-sm align-middle"><thead><tr>' +
+        '<th>ระดับ / รหัส</th><th>ชีต / รายการ</th><th>ปัญหา</th></tr></thead><tbody>' +
+        issues.map(integrityIssueRow).join('') + '</tbody></table></div>' :
+        '<p class="text-body-secondary mb-0">ไม่พบปัญหาความสอดคล้องของข้อมูล</p>');
+    setVisible(host, true);
+  }
+
+  async function runIntegrity(context) {
+    var button = CRS.$('#admin-run-integrity', context.page);
+    button.disabled = true;
+    try {
+      var audit = await CRS.withLoading(function () { return CRS.api.adminRunIntegrityAudit(); },
+        'กำลังตรวจสอบความสมบูรณ์ของข้อมูล…');
+      if (!alive(context)) return;
+      renderIntegrity(context, audit || {});
+      CRS.toast(audit.passed ? 'ตรวจสอบข้อมูลแล้ว ไม่พบข้อผิดพลาด' : 'ตรวจสอบแล้ว พบรายการที่ควรแก้ไข',
+        audit.passed ? 'success' : 'warning');
+    } catch (error) {
+      CRS.handleError(error);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  function renderAssetSummary(context, dashboard) {
+    var metrics = dashboard.metrics || {};
+    var definitions = [
+      ['total', 'ทั้งหมด', 'bi-boxes', 'primary'], ['available', 'พร้อมยืม', 'bi-check-circle', 'success'],
+      ['pending', 'รออนุมัติ', 'bi-hourglass-split', 'warning'], ['borrowed', 'กำลังยืม', 'bi-arrow-left-right', 'primary'],
+      ['maintenance', 'ซ่อมบำรุง', 'bi-tools', 'secondary'], ['damaged', 'ชำรุด', 'bi-bandaid', 'danger'],
+      ['lost', 'สูญหาย', 'bi-question-circle', 'dark']
+    ];
+    CRS.$('#admin-asset-status-summary', context.page).innerHTML = definitions.map(function (definition) {
+      return '<div class="col-6 col-md-4 col-xl"><article class="card h-100"><div class="card-body">' +
+        '<div class="d-flex align-items-center gap-2 text-' + definition[3] + '"><i class="bi ' + definition[2] +
+        '" aria-hidden="true"></i><span class="small">' + definition[1] + '</span></div><strong class="fs-4">' +
+        Number(metrics[definition[0]] || 0).toLocaleString('th-TH') + '</strong></div></article></div>';
+    }).join('');
+    var count = Number(metrics.pending || 0) + Number(metrics.overdue || 0);
+    var badge = CRS.$('#admin-borrow-attention-count', context.page);
+    badge.textContent = count.toLocaleString('th-TH');
+    badge.title = 'รออนุมัติและเกินกำหนด';
+    setVisible(badge, count > 0);
+  }
+
+  async function loadAdminSummary(context, force) {
+    if (context.summaryPromise && !force) return context.summaryPromise;
+    var request = ++context.requests.summary;
+    var host = CRS.$('#admin-asset-status-summary', context.page);
+    if (host && (!context.summaryLoaded || force)) {
+      host.innerHTML = '<div class="col-12 text-center py-4 text-body-secondary"><span class="spinner-border spinner-border-sm me-2" ' +
+        'aria-hidden="true"></span>กำลังโหลดสรุปสถานะอุปกรณ์</div>';
+    }
+    var task = CRS.api.adminGetDashboard().then(function (dashboard) {
+      if (!alive(context) || request !== context.requests.summary) return;
+      context.summaryLoaded = true;
+      renderAssetSummary(context, dashboard || {});
+    }).catch(function (error) {
+      if (!alive(context) || request !== context.requests.summary) return;
+      if (host) host.innerHTML = '<div class="col-12"><div class="alert alert-danger mb-0">' +
+        escape(error.message || 'ไม่สามารถโหลดสรุปสถานะได้') + '</div></div>';
+    }).finally(function () {
+      if (context.summaryPromise === task) context.summaryPromise = null;
+    });
+    context.summaryPromise = task;
+    return task;
+  }
+
+  function loadTab(context, tab, force) {
+    context.activeTab = tab;
+    if (tab === 'borrowing') return loadBorrow(context);
+    if (tab === 'assets') return loadAdminSummary(context, Boolean(force));
+    if (tab === 'users') return loadUsers(context);
+    if (tab === 'categories') return loadCategories(context);
+    if (tab === 'history') return loadHistory(context);
+    if (tab === 'system') return loadOperations(context);
+    return Promise.resolve();
+  }
+
+  async function refreshActiveTab(context) {
+    if (context.activeTab === 'system') {
+      var tasks = [loadOperations(context)];
+      if (context.integrityLoaded) tasks.push(runIntegrity(context));
+      await Promise.all(tasks);
+      return;
+    }
+    await loadTab(context, context.activeTab, true);
+  }
+
+  function bindForms(context) {
+    CRS.$('#form-admin-borrow-filter', context.page).addEventListener('submit', function (event) {
+      event.preventDefault(); context.query.borrow = borrowQueryFromForm(context); loadBorrow(context);
+    });
+    CRS.$('#form-admin-user-filter', context.page).addEventListener('submit', function (event) {
+      event.preventDefault(); context.query.users = userQueryFromForm(context); loadUsers(context);
+    });
+    CRS.$('#form-admin-user-filter', context.page).addEventListener('reset', function () {
+      global.setTimeout(function () {
+        context.query.users = userQueryFromForm(context); loadUsers(context);
+      }, 0);
+    });
+    CRS.$('#form-admin-category-filter', context.page).addEventListener('submit', function (event) {
+      event.preventDefault(); context.query.categories = categoryQueryFromForm(context); loadCategories(context);
+    });
+    CRS.$('#form-admin-history-filter', context.page).addEventListener('submit', function (event) {
+      event.preventDefault(); context.query.history = historyQueryFromForm(context); loadHistory(context);
+    });
+    CRS.$('#form-admin-operation-filter', context.page).addEventListener('submit', function (event) {
+      event.preventDefault(); context.query.operations = operationQueryFromForm(context); loadOperations(context);
+    });
+    ['approve', 'reject', 'checkout', 'return'].forEach(function (action) {
+      CRS.$('#form-admin-' + action, context.page).addEventListener('submit', function (event) {
+        event.preventDefault(); submitBorrowAction(context, action, event.currentTarget);
+      });
+    });
+    CRS.$('#form-admin-user', context.page).addEventListener('submit', function (event) {
+      event.preventDefault(); submitUser(context, event.currentTarget);
+    });
+    CRS.$('#form-admin-category', context.page).addEventListener('submit', function (event) {
+      event.preventDefault(); submitCategory(context, event.currentTarget);
+    });
+    CRS.$('#form-admin-abort-operation', context.page).addEventListener('submit', function (event) {
+      event.preventDefault(); submitAbort(context, event.currentTarget);
+    });
+    CRS.$('#admin-category-prefix-input', context.page).addEventListener('input', function (event) {
+      event.target.value = event.target.value.toUpperCase();
+    });
+    var returnForm = CRS.$('#form-admin-return', context.page);
+    returnForm.addEventListener('change', function () { syncReturnRules(returnForm); });
+    returnForm.addEventListener('input', function (event) {
+      if (event.target.matches('[data-returned-quantity]')) syncReturnRules(returnForm);
+    });
+  }
+
+  function bindTabs(context) {
+    CRS.$$('#admin-tabs [data-bs-toggle="tab"]', context.page).forEach(function (button) {
+      button.addEventListener('shown.bs.tab', function (event) {
+        var pane = value(event.target.getAttribute('data-bs-target')).replace(/^#/, '');
+        var tab = TAB_BY_PANE[pane] || 'borrowing';
+        if (tab !== context.activeTab) loadTab(context, tab, false);
+      });
+    });
+  }
+
+  function bindClicks(context) {
+    context.page.addEventListener('click', function (event) {
+      var target = event.target.closest('[data-action]');
+      if (!target || !context.page.contains(target)) return;
+      var action = target.dataset.action;
+      if (action === 'refresh-admin-tab') refreshActiveTab(context);
+      if (action === 'filter-admin-borrow') {
+        context.query.borrow.status = value(target.dataset.status);
+        context.query.borrow.page = 1;
+        syncBorrowQuickFilters(context);
+        loadBorrow(context);
+      }
+      if (action === 'admin-borrow-page' && !target.disabled) {
+        context.query.borrow.page = integer(target.dataset.page, 1); loadBorrow(context);
+      }
+      if (action === 'admin-users-page' && !target.disabled) {
+        context.query.users.page = integer(target.dataset.page, 1); loadUsers(context);
+      }
+      if (action === 'admin-categories-page' && !target.disabled) {
+        context.query.categories.page = integer(target.dataset.page, 1); loadCategories(context);
+      }
+      if (action === 'admin-history-page' && !target.disabled) {
+        context.query.history.page = integer(target.dataset.page, 1); loadHistory(context);
+      }
+      if (action === 'admin-operations-page' && !target.disabled) {
+        context.query.operations.page = integer(target.dataset.page, 1); loadOperations(context);
+      }
+      if (action === 'admin-borrow-action') {
+        openBorrowAction(context, target.dataset.borrowAction, target.dataset.borrowId);
+      }
+      if (action === 'view-admin-borrow') openBorrowDetail(context, target.dataset.borrowId);
+      if (action === 'open-admin-asset') CRS.navigate('equipment-detail', { id: target.dataset.assetId });
+      if (action === 'add-equipment') CRS.navigate('equipment', { add: '1' });
+      if (action === 'add-user') openUserForm(context, null);
+      if (action === 'edit-admin-user') {
+        var user = findPageRecord(context.data.users, 'user_id', target.dataset.userId);
+        if (user) openUserForm(context, user); else CRS.toast('ไม่พบข้อมูลผู้ใช้ กรุณารีเฟรชรายการ', 'warning');
+      }
+      if (action === 'add-category') openCategoryForm(context, null);
+      if (action === 'edit-admin-category') {
+        var category = findPageRecord(context.data.categories, 'category_id', target.dataset.categoryId);
+        if (category) openCategoryForm(context, category); else CRS.toast('ไม่พบข้อมูลหมวดหมู่ กรุณารีเฟรชรายการ', 'warning');
+      }
+      if (action === 'run-integrity-audit') runIntegrity(context);
+      if (action === 'view-admin-operation') openOperation(context, target.dataset.operationId);
+      if (action === 'reconcile-operation') reconcileOperation(context, target);
+      if (action === 'open-abort-operation') openAbortForm(context, target);
+    });
+  }
+
+  function initialTab(params) {
+    var requested = value(params && params.tab).toLowerCase();
+    var aliases = { borrow: 'borrowing', equipment: 'assets', asset: 'assets',
+      user: 'users', category: 'categories', operation: 'system', operations: 'system' };
+    requested = aliases[requested] || requested;
+    return Object.prototype.hasOwnProperty.call(TAB_BUTTON, requested) ? requested : 'borrowing';
+  }
+
+  function writeInitialFilters(context) {
+    var mappings = [
+      ['#form-admin-borrow-filter', context.query.borrow],
+      ['#form-admin-user-filter', context.query.users],
+      ['#form-admin-category-filter', context.query.categories],
+      ['#form-admin-history-filter', context.query.history],
+      ['#form-admin-operation-filter', context.query.operations]
+    ];
+    mappings.forEach(function (mapping) {
+      var form = CRS.$(mapping[0], context.page);
+      Object.keys(mapping[1]).forEach(function (name) {
+        var field = form && form.elements.namedItem(name);
+        if (field && !(field instanceof RadioNodeList)) field.value = value(mapping[1][name]);
+      });
+    });
+  }
+
+  async function renderAdmin(params, routeToken) {
+    if (!isAdmin()) {
+      CRS.toast('เฉพาะผู้ดูแลระบบเท่านั้นที่เปิดหน้านี้ได้', 'danger');
+      CRS.navigate('dashboard', {}, true);
+      return;
+    }
+    params = params || {};
+    var page = CRS.mount('view-admin-template');
+    var pageSize = defaultPageSize();
+    var selectedTab = initialTab(params);
+    var deepSearch = value(params.search).trim();
+    var explicitBorrowStatus = selectedTab === 'borrowing' &&
+      Object.prototype.hasOwnProperty.call(params, 'status');
+    var context = {
+      page: page,
+      routeToken: routeToken,
+      activeTab: selectedTab,
+      requests: { borrow: 0, users: 0, categories: 0, history: 0, operations: 0,
+        operationDetail: 0, summary: 0 },
+      query: {
+        borrow: { search: selectedTab === 'borrowing' ? deepSearch : '',
+          status: value(explicitBorrowStatus ? params.status : 'PENDING_APPROVAL').trim().toUpperCase(),
+          sortBy: 'requested_at', sortDirection: 'desc', page: 1, pageSize: pageSize },
+        users: { search: selectedTab === 'users' ? deepSearch : '',
+          role: selectedTab === 'users' ? value(params.role).toUpperCase() : '',
+          status: selectedTab === 'users' ? value(params.status).toUpperCase() : '',
+          sortBy: 'name', sortDirection: 'asc', page: 1, pageSize: pageSize },
+        categories: { search: selectedTab === 'categories' ? deepSearch : '',
+          status: selectedTab === 'categories' ? value(params.status).toUpperCase() : '',
+          sortBy: 'sort_order', sortDirection: 'asc', page: 1, pageSize: pageSize },
+        history: { search: selectedTab === 'history' ? deepSearch : '',
+          entityType: selectedTab === 'history' ? value(params.entityType || params.entity_type).toUpperCase() : '',
+          action: selectedTab === 'history' ? value(params.action).toUpperCase() : '',
+          sortBy: 'timestamp', sortDirection: 'desc',
+          page: 1, pageSize: pageSize },
+        operations: { search: selectedTab === 'system' ? deepSearch : '',
+          status: selectedTab === 'system' ? value(params.status).toUpperCase() : '',
+          action: selectedTab === 'system' ? value(params.action).toUpperCase() : '',
+          sortBy: 'started_at', sortDirection: 'desc',
+          page: 1, pageSize: pageSize }
+      },
+      data: { borrow: null, users: null, categories: null, history: null, operations: null },
+      editingUser: null,
+      editingCategory: null,
+      currentOperation: null,
+      activeBorrow: null,
+      integrityLoaded: false,
+      summaryLoaded: false,
+      summaryPromise: null
+    };
+    bindForms(context);
+    bindClicks(context);
+    writeInitialFilters(context);
+    var tabButton = CRS.$(TAB_BUTTON[context.activeTab], page);
+    if (tabButton && context.activeTab !== 'borrowing') bootstrap.Tab.getOrCreateInstance(tabButton).show();
+    bindTabs(context);
+    syncBorrowQuickFilters(context);
+    await Promise.all([loadTab(context, context.activeTab, false), loadAdminSummary(context, false)]);
+  }
+
+  CRS.registerRoute('admin', renderAdmin);
+})(window);
+</script>

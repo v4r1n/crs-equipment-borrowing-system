@@ -1,0 +1,101 @@
+<script>
+(function (global) {
+  'use strict';
+
+  class ClientApiError extends Error {
+    constructor(error, requestId) {
+      const source = error || {};
+      super(source.message || 'ไม่สามารถดำเนินการได้ กรุณาลองใหม่อีกครั้ง');
+      this.name = 'ClientApiError';
+      this.code = source.code || 'INTERNAL';
+      this.fieldErrors = source.fieldErrors || null;
+      this.retryable = source.retryable !== false;
+      this.requestId = requestId || '';
+    }
+  }
+
+  function invoke(method, args) {
+    return new Promise(function (resolve, reject) {
+      if (!global.google || !google.script || !google.script.run) {
+        reject(new ClientApiError({
+          code: 'CLIENT_ENVIRONMENT',
+          message: 'กรุณาเปิดระบบผ่านลิงก์ Web app ขององค์กร',
+          retryable: false
+        }));
+        return;
+      }
+      const runner = google.script.run
+        .withSuccessHandler(function (response) {
+          if (response && response.ok === true) {
+            resolve(response.data);
+            return;
+          }
+          reject(new ClientApiError(
+            response && response.error,
+            response && response.meta && response.meta.requestId
+          ));
+        })
+        .withFailureHandler(function (error) {
+          console.error('google.script.run transport failure', error);
+          reject(new ClientApiError({
+            code: 'TRANSPORT_ERROR',
+            message: 'เชื่อมต่อระบบไม่สำเร็จ กรุณาตรวจอินเทอร์เน็ตแล้วลองใหม่',
+            retryable: true
+          }));
+        });
+      try {
+        runner[method].apply(runner, args || []);
+      } catch (error) {
+        reject(new ClientApiError({
+          code: 'CLIENT_ERROR',
+          message: 'ไม่สามารถส่งคำขอไปยังระบบได้ กรุณาลองใหม่',
+          retryable: true
+        }));
+      }
+    });
+  }
+
+  function endpoint(method) {
+    return function () {
+      return invoke(method, Array.prototype.slice.call(arguments));
+    };
+  }
+
+  global.CRS = global.CRS || {};
+  global.CRS.ClientApiError = ClientApiError;
+  global.CRS.api = Object.freeze({
+    getAppBootstrap: endpoint('getAppBootstrap'),
+    getDashboard: endpoint('getDashboard'),
+    listEquipment: endpoint('listEquipment'),
+    getEquipmentDetail: endpoint('getEquipmentDetail'),
+    listCategories: endpoint('listCategories'),
+    createBorrowRequest: endpoint('createBorrowRequest'),
+    listMyBorrowing: endpoint('listMyBorrowing'),
+    getBorrowDetail: endpoint('getBorrowDetail'),
+    requestReturn: endpoint('requestReturn'),
+    listMyHistory: endpoint('listMyHistory'),
+    adminGetDashboard: endpoint('adminGetDashboard'),
+    adminListBorrowing: endpoint('adminListBorrowing'),
+    adminApproveBorrow: endpoint('adminApproveBorrow'),
+    adminRejectBorrow: endpoint('adminRejectBorrow'),
+    adminCheckoutBorrow: endpoint('adminCheckoutBorrow'),
+    adminCompleteReturn: endpoint('adminCompleteReturn'),
+    adminCreateEquipment: endpoint('adminCreateEquipment'),
+    adminUpdateEquipment: endpoint('adminUpdateEquipment'),
+    adminChangeEquipmentStatus: endpoint('adminChangeEquipmentStatus'),
+    adminUploadEquipmentImage: endpoint('adminUploadEquipmentImage'),
+    adminListUsers: endpoint('adminListUsers'),
+    adminCreateUser: endpoint('adminCreateUser'),
+    adminUpdateUser: endpoint('adminUpdateUser'),
+    adminListCategories: endpoint('adminListCategories'),
+    adminCreateCategory: endpoint('adminCreateCategory'),
+    adminUpdateCategory: endpoint('adminUpdateCategory'),
+    adminListHistory: endpoint('adminListHistory'),
+    adminRunIntegrityAudit: endpoint('adminRunIntegrityAudit'),
+    adminListOperations: endpoint('adminListOperations'),
+    adminGetOperationDetail: endpoint('adminGetOperationDetail'),
+    adminReconcileOperation: endpoint('adminReconcileOperation'),
+    adminAbortOperation: endpoint('adminAbortOperation')
+  });
+})(window);
+</script>

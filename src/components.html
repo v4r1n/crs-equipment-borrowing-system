@@ -1,0 +1,161 @@
+<div
+  id="toast-container"
+  class="toast-container position-fixed top-0 end-0 p-3"
+  aria-label="การแจ้งเตือนของระบบ"
+  aria-live="polite"
+  aria-atomic="false"
+></div>
+
+<div
+  id="confirm-modal"
+  class="modal fade"
+  tabindex="-1"
+  aria-labelledby="confirm-modal-title"
+  aria-describedby="confirm-modal-message"
+  aria-hidden="true"
+>
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <div class="d-flex align-items-center gap-3">
+          <span class="state-icon state-icon-warning flex-shrink-0" aria-hidden="true">
+            <i class="bi bi-question-lg"></i>
+          </span>
+          <div>
+            <p class="eyebrow mb-1">โปรดตรวจสอบก่อนดำเนินการ</p>
+            <h2 id="confirm-modal-title" class="modal-title fs-5" data-confirm-title>ยืนยันรายการ</h2>
+          </div>
+        </div>
+        <button type="button" class="btn-close align-self-start" data-bs-dismiss="modal" aria-label="ปิด"></button>
+      </div>
+      <div class="modal-body pt-3">
+        <p id="confirm-modal-message" class="mb-0 text-secondary" data-confirm-message>ยืนยันรายการนี้?</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-confirm-cancel>ยกเลิก</button>
+        <button type="button" class="btn btn-primary" data-confirm-accept>ยืนยัน</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div
+  id="app-modal"
+  class="modal fade"
+  tabindex="-1"
+  aria-labelledby="app-modal-title"
+  aria-hidden="true"
+>
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="app-modal-title" class="modal-title fs-5" data-app-modal-title>รายละเอียด</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+      </div>
+      <div id="app-modal-body" class="modal-body" data-app-modal-body></div>
+      <div id="app-modal-footer" class="modal-footer" data-app-modal-footer hidden></div>
+    </div>
+  </div>
+</div>
+
+<template id="component-loading-template">
+  <section class="content-loading-state" role="status" aria-live="polite" aria-label="กำลังโหลดข้อมูล">
+    <div class="content-loading-content">
+      <div class="spinner-border text-primary" aria-hidden="true"></div>
+      <h2 class="h6 mt-3 mb-1" data-loading-title>กำลังโหลดข้อมูล</h2>
+      <p class="text-secondary mb-0" data-loading-description>กรุณารอสักครู่</p>
+    </div>
+  </section>
+</template>
+
+<template id="component-empty-state-template">
+  <section class="empty-state" aria-label="สถานะรายการ" aria-live="polite">
+    <div class="empty-state-content">
+      <span class="empty-state-icon" aria-hidden="true"><i class="bi bi-inbox"></i></span>
+      <h2 class="h6 mb-1" data-empty-title>ยังไม่มีข้อมูล</h2>
+      <p class="text-secondary mb-3" data-empty-description>เมื่อมีรายการ ข้อมูลจะแสดงในพื้นที่นี้</p>
+      <div data-empty-action hidden></div>
+    </div>
+  </section>
+</template>
+
+<template id="component-error-state-template">
+  <section class="error-state" role="alert" aria-label="ข้อผิดพลาดในการโหลดข้อมูล">
+    <div class="error-state-content">
+      <span class="error-state-icon" aria-hidden="true"><i class="bi bi-exclamation-circle"></i></span>
+      <h2 class="h6 mb-1" data-error-title>โหลดข้อมูลไม่สำเร็จ</h2>
+      <p class="text-secondary mb-2" data-error-description>กรุณาตรวจสอบการเชื่อมต่อแล้วลองอีกครั้ง</p>
+      <p class="request-id mb-3" data-error-request-id></p>
+      <button class="btn btn-outline-primary" type="button" data-action="retry-view">
+        <i class="bi bi-arrow-clockwise me-2" aria-hidden="true"></i>ลองอีกครั้ง
+      </button>
+    </div>
+  </section>
+</template>
+
+<template id="component-pagination-template">
+  <nav class="d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-3" aria-label="เปลี่ยนหน้ารายการ">
+    <p class="mb-0 text-secondary small" aria-live="polite">
+      หน้า <span data-pagination-current>1</span> จาก <span data-pagination-total-pages>1</span>
+      <span aria-hidden="true">·</span>
+      <span data-pagination-total>0</span> รายการ
+    </p>
+    <ul class="pagination pagination-sm mb-0">
+      <li class="page-item" data-pagination-previous-item>
+        <button class="page-link" type="button" data-action="previous-page" aria-label="หน้าก่อนหน้า">
+          <i class="bi bi-chevron-left" aria-hidden="true"></i>
+        </button>
+      </li>
+      <li class="page-item disabled d-none d-sm-block" aria-current="page">
+        <span class="page-link">
+          <span data-pagination-current>1</span><span aria-hidden="true">/</span><span data-pagination-total-pages>1</span>
+          <span class="visually-hidden">หน้าปัจจุบัน</span>
+        </span>
+      </li>
+      <li class="page-item" data-pagination-next-item>
+        <button class="page-link" type="button" data-action="next-page" aria-label="หน้าถัดไป">
+          <i class="bi bi-chevron-right" aria-hidden="true"></i>
+        </button>
+      </li>
+    </ul>
+  </nav>
+</template>
+
+<template id="component-account-template">
+  <section class="section-card" aria-label="บัญชีผู้ใช้งาน">
+    <div class="account-panel-header">
+      <span class="account-panel-avatar" data-session-initial aria-hidden="true">—</span>
+      <div class="min-w-0">
+        <p class="eyebrow mb-1">บัญชีที่กำลังใช้งาน</p>
+        <h2 class="h5 mb-1 text-break" data-session-name>ผู้ใช้งาน</h2>
+        <p class="text-secondary mb-0 text-break" data-session-email>—</p>
+      </div>
+    </div>
+    <hr class="my-4">
+    <dl class="definition-grid mb-0">
+      <div class="definition-item">
+        <dt>หน่วยงาน</dt>
+        <dd data-session-department>ไม่ระบุ</dd>
+      </div>
+      <div class="definition-item">
+        <dt>สิทธิ์การใช้งาน</dt>
+        <dd data-session-role>ผู้ใช้งาน</dd>
+      </div>
+    </dl>
+  </section>
+</template>
+
+<template id="toast-template">
+  <div class="toast app-toast" role="status" aria-live="polite" aria-atomic="true">
+    <div class="toast-body d-flex align-items-start gap-2">
+      <span class="toast-icon toast-icon-info" data-toast-icon aria-hidden="true">
+        <i class="bi bi-info-lg"></i>
+      </span>
+      <div class="flex-grow-1 min-w-0">
+        <strong class="d-block" data-toast-title>แจ้งเตือน</strong>
+        <span class="small text-secondary" data-toast-message></span>
+      </div>
+      <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="ปิด"></button>
+    </div>
+  </div>
+</template>

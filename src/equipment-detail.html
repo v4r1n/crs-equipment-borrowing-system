@@ -1,0 +1,161 @@
+<template id="view-equipment-detail-template">
+  <section id="page-equipment-detail" class="app-page" data-page="equipment-detail"
+           aria-labelledby="equipment-detail-title">
+    <header class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+      <button type="button" class="btn btn-outline-secondary" data-route="equipment">
+        <i class="bi bi-arrow-left me-2" aria-hidden="true"></i>กลับไปหน้าอุปกรณ์
+      </button>
+      <div id="equipment-detail-admin-actions" class="d-flex flex-wrap gap-2 d-none" data-admin-only>
+        <button type="button" class="btn btn-outline-primary" data-action="edit-equipment"
+                data-asset-id="" data-row-version="">
+          <i class="bi bi-pencil me-2" aria-hidden="true"></i>แก้ไขข้อมูล
+        </button>
+        <button type="button" class="btn btn-outline-secondary" data-action="upload-image"
+                data-asset-id="" data-row-version="">
+          <i class="bi bi-image me-2" aria-hidden="true"></i>เปลี่ยนภาพ
+        </button>
+        <button type="button" class="btn btn-outline-warning" data-action="change-status"
+                data-asset-id="" data-row-version="">
+          <i class="bi bi-arrow-repeat me-2" aria-hidden="true"></i>เปลี่ยนสถานะ
+        </button>
+      </div>
+    </header>
+
+    <div id="equipment-detail-loading" class="d-flex align-items-center justify-content-center gap-2 py-5"
+         data-state="loading" role="status" aria-live="polite">
+      <span class="spinner-border spinner-border-sm text-primary" aria-hidden="true"></span>
+      <span>กำลังโหลดข้อมูลอุปกรณ์</span>
+    </div>
+    <div id="equipment-detail-error" class="alert alert-danger d-none" data-state="error" role="alert">
+      <div class="d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-3">
+        <span data-error-message>ไม่สามารถโหลดข้อมูลอุปกรณ์ได้</span>
+        <button type="button" class="btn btn-sm btn-outline-danger" data-action="reload-equipment-detail">ลองอีกครั้ง</button>
+      </div>
+    </div>
+
+    <div id="equipment-detail-content" class="d-none" data-state="content">
+      <div class="row g-4">
+        <div class="col-12 col-lg-5 col-xl-4">
+          <section class="card overflow-hidden" aria-label="ภาพและรหัสอุปกรณ์">
+            <div class="ratio ratio-4x3 bg-body-tertiary">
+              <img id="equipment-detail-image" class="object-fit-contain p-3 d-none" alt="">
+              <div id="equipment-detail-image-fallback"
+                   class="d-flex flex-column align-items-center justify-content-center text-body-secondary">
+                <i class="bi bi-box-seam display-4" aria-hidden="true"></i>
+                <span class="mt-2">ไม่มีภาพอุปกรณ์</span>
+              </div>
+            </div>
+            <div class="card-body">
+              <dl class="row small mb-0">
+                <dt class="col-5 text-body-secondary">รหัสทรัพย์สิน</dt>
+                <dd id="equipment-detail-asset-id" class="col-7 text-break" data-field="asset_id"></dd>
+                <dt class="col-5 text-body-secondary">SKU</dt>
+                <dd id="equipment-detail-sku" class="col-7 text-break" data-field="sku"></dd>
+                <dt class="col-5 text-body-secondary">Serial Number</dt>
+                <dd id="equipment-detail-serial" class="col-7 text-break mb-0" data-field="serial_number"></dd>
+              </dl>
+            </div>
+          </section>
+
+          <section id="equipment-qr" class="card mt-4" aria-labelledby="equipment-qr-title">
+            <div class="card-body text-center">
+              <h2 id="equipment-qr-title" class="h5">QR Code ประจำอุปกรณ์</h2>
+              <div id="equipment-qr-content" class="d-flex justify-content-center my-3" aria-live="polite"></div>
+              <div class="d-flex flex-wrap justify-content-center gap-2">
+                <button type="button" class="btn btn-outline-primary" data-action="download-qr" data-asset-id="">
+                  <i class="bi bi-download me-2" aria-hidden="true"></i>ดาวน์โหลด QR
+                </button>
+                <button type="button" class="btn btn-outline-secondary" data-action="copy-equipment-link" data-asset-id="">
+                  <i class="bi bi-link-45deg me-2" aria-hidden="true"></i>คัดลอกลิงก์
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="col-12 col-lg-7 col-xl-8">
+          <article class="card mb-4">
+            <div class="card-body p-4">
+              <div class="d-flex flex-column flex-sm-row align-items-sm-start justify-content-between gap-3 mb-4">
+                <div>
+                  <p id="equipment-detail-category" class="text-body-secondary mb-1" data-field="category_name"></p>
+                  <h1 id="equipment-detail-title" class="h3 mb-2" data-field="name"></h1>
+                  <p id="equipment-detail-brand-model" class="mb-0 text-body-secondary"></p>
+                </div>
+                <span id="equipment-detail-status" class="badge rounded-pill text-bg-secondary align-self-start"
+                      data-field="status"></span>
+              </div>
+
+              <dl class="row g-0 mb-4">
+                <dt class="col-sm-4 py-2 border-bottom text-body-secondary">หน่วยงานเจ้าของ</dt>
+                <dd id="equipment-detail-department" class="col-sm-8 py-2 border-bottom mb-0" data-field="department"></dd>
+                <dt class="col-sm-4 py-2 border-bottom text-body-secondary">สถานที่จัดเก็บ</dt>
+                <dd id="equipment-detail-location" class="col-sm-8 py-2 border-bottom mb-0" data-field="location"></dd>
+                <dt class="col-sm-4 py-2 border-bottom text-body-secondary">รายละเอียด</dt>
+                <dd id="equipment-detail-description" class="col-sm-8 py-2 border-bottom mb-0 text-break"
+                    data-field="description"></dd>
+                <dt class="col-sm-4 py-2 border-bottom text-body-secondary">หมายเหตุ</dt>
+                <dd id="equipment-detail-note" class="col-sm-8 py-2 border-bottom mb-0 text-break" data-field="note"></dd>
+              </dl>
+
+              <div id="equipment-detail-borrow-unavailable" class="alert alert-secondary d-none" role="status"></div>
+              <button id="equipment-detail-borrow-button" type="button" class="btn btn-primary btn-lg w-100"
+                      data-action="borrow" data-asset-id="">
+                <i class="bi bi-calendar-plus me-2" aria-hidden="true"></i>ขอยืมอุปกรณ์นี้
+              </button>
+            </div>
+          </article>
+
+          <section class="card mb-4" aria-labelledby="equipment-specification-title">
+            <div class="card-header bg-body py-3">
+              <h2 id="equipment-specification-title" class="h5 mb-0">ข้อมูลจำเพาะ</h2>
+            </div>
+            <div id="equipment-detail-specification" class="card-body text-break" data-field="specification"></div>
+          </section>
+
+          <section class="card mb-4" aria-labelledby="equipment-included-title">
+            <div class="card-header bg-body d-flex align-items-center justify-content-between gap-3 py-3">
+              <h2 id="equipment-included-title" class="h5 mb-0">อุปกรณ์ประกอบ</h2>
+              <span id="equipment-included-count" class="badge text-bg-light"></span>
+            </div>
+            <div id="equipment-included-items">
+              <div id="equipment-included-empty" class="card-body text-center text-body-secondary d-none"
+                   data-state="empty">ไม่มีอุปกรณ์ประกอบที่ต้องตรวจนับ</div>
+              <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                  <caption class="visually-hidden">อุปกรณ์ประกอบของอุปกรณ์รายการนี้</caption>
+                  <thead class="table-light">
+                    <tr>
+                      <th scope="col">รายการ</th>
+                      <th scope="col" class="text-center">จำนวน</th>
+                      <th scope="col">การตรวจคืน</th>
+                      <th scope="col">หมายเหตุ</th>
+                    </tr>
+                  </thead>
+                  <tbody id="table-body-equipment-included"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <section id="equipment-admin-metadata" class="card d-none" aria-labelledby="equipment-admin-metadata-title"
+                   data-admin-only>
+            <div class="card-header bg-body py-3">
+              <h2 id="equipment-admin-metadata-title" class="h5 mb-0">ข้อมูลสำหรับผู้ดูแลระบบ</h2>
+            </div>
+            <div class="card-body">
+              <dl class="row mb-0">
+                <dt class="col-sm-4 text-body-secondary">วันที่จัดซื้อ</dt>
+                <dd id="equipment-detail-purchase-date" class="col-sm-8" data-field="purchase_date"></dd>
+                <dt class="col-sm-4 text-body-secondary">ราคาจัดซื้อ</dt>
+                <dd id="equipment-detail-purchase-price" class="col-sm-8" data-field="purchase_price"></dd>
+                <dt class="col-sm-4 text-body-secondary">แก้ไขล่าสุด</dt>
+                <dd id="equipment-detail-updated-at" class="col-sm-8 mb-0" data-field="updated_at"></dd>
+              </dl>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </section>
+</template>

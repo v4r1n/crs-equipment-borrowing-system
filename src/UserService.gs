@@ -92,6 +92,14 @@ function updateUser_(input, actor) {
   return withAdminMutation_(function (lockedActor) {
     var current = findRecordById_(SHEETS.USERS, 'user_id', userId);
     assertApp_(current, 'NOT_FOUND', 'ไม่พบผู้ใช้ที่ต้องการแก้ไข', null, false);
+    assertApp_(
+      current.user_id !== lockedActor.user_id ||
+        normalizeEmail_(normalized.email) === normalizeEmail_(current.email),
+      'VALIDATION_FAILED', 'ไม่สามารถเปลี่ยนอีเมลของบัญชีที่กำลังใช้งาน', {
+        fieldErrors: fieldError_('email',
+          'ให้ผู้ดูแลระบบคนอื่นเป็นผู้เปลี่ยนอีเมลของบัญชีนี้')
+      }, false
+    );
     var spec = operationSpec_(commandId, 'EDIT_USER', 'USER', userId, {
       userId: userId,
       expectedVersion: Number(input.expected_version),

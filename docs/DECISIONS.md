@@ -79,3 +79,11 @@ A retry with the same specification returns the stored completed result or resum
 Image upload additionally permits guarded terminal `ABORTED` only while Equipment remains at exact before-state and no matching History exists. Reachable partial image files are moved to Trash and an inaccessible pinned folder produces explicit orphan-cleanup evidence. This releases an otherwise permanent asset reservation without pretending a domain mutation succeeded; the old command ID remains terminal.
 
 This adds storage and recovery complexity, and payload/result text must be split into bounded Sheet cells, but it closes the crash window where domain rows could persist without History or a stable retry result. Operations has no generic CRUD endpoint and is retained as evidence; it is not a replacement for History or for the Borrow source-of-truth model.
+
+## ADR-013 — Client-side SPA routing and stable retry commands
+
+Status: Accepted — 2026-08-27
+
+The browser uses one Apps Script HTML-service shell with allowlisted partials and routes. `google.script.history`/`google.script.url` preserve navigation and Asset deep links without full reloads; each renderer owns a view token so late asynchronous responses cannot overwrite a newer route. Admin visibility is a usability gate only—every RPC remains server-authorized.
+
+Every browser mutation stores a command ID, payload fingerprint, and uncertainty flag in `sessionStorage` before calling `google.script.run`. A definite pre-start validation/authorization error clears the entry; success clears it; an uncertain transport or server result locks the exact payload to the same command ID so a retry cannot create a second operation. The server Operations journal remains authoritative and Admin reconciliation handles commands that cannot be resolved safely in the originating browser session.

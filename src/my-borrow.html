@@ -1,0 +1,180 @@
+<template id="view-my-borrow-template">
+  <section id="page-my-borrow" class="app-page" data-page="my-borrow" aria-labelledby="my-borrow-title">
+    <header class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+      <div>
+        <p class="text-body-secondary small mb-1">ติดตามคำขอและกำหนดคืนของคุณ</p>
+        <h1 id="my-borrow-title" class="h3 mb-0">การยืมของฉัน</h1>
+      </div>
+      <button type="button" class="btn btn-primary align-self-start align-self-md-center" data-route="equipment">
+        <i class="bi bi-search me-2" aria-hidden="true"></i>ค้นหาอุปกรณ์เพื่อยืม
+      </button>
+    </header>
+
+    <ul class="nav nav-tabs mb-4" id="my-borrow-tabs" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button id="my-borrow-list-tab" class="nav-link active" type="button" role="tab"
+                data-bs-toggle="tab" data-bs-target="#my-borrow-list-pane"
+                aria-controls="my-borrow-list-pane" aria-selected="true">
+          รายการยืม
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button id="my-borrow-history-tab" class="nav-link" type="button" role="tab"
+                data-bs-toggle="tab" data-bs-target="#my-borrow-history-pane"
+                aria-controls="my-borrow-history-pane" aria-selected="false">
+          ประวัติการดำเนินการ
+        </button>
+      </li>
+    </ul>
+
+    <div class="tab-content">
+      <section id="my-borrow-list-pane" class="tab-pane fade show active" role="tabpanel"
+               aria-labelledby="my-borrow-list-tab" tabindex="0">
+        <form id="form-my-borrow-filter" class="card card-body mb-4" novalidate>
+          <div class="row g-3 align-items-end">
+            <div class="col-12 col-md-5">
+              <label for="my-borrow-search" class="form-label">ค้นหารายการ</label>
+              <div class="input-group">
+                <span class="input-group-text" aria-hidden="true"><i class="bi bi-search"></i></span>
+                <input id="my-borrow-search" name="search" type="search" class="form-control" autocomplete="off"
+                       aria-describedby="my-borrow-search-help">
+              </div>
+              <div id="my-borrow-search-help" class="form-text">ค้นหาจากเลขที่ยืม รหัสทรัพย์สิน ชื่ออุปกรณ์ หรือ SKU</div>
+            </div>
+            <div class="col-7 col-md-3">
+              <label for="my-borrow-status-filter" class="form-label">สถานะ</label>
+              <select id="my-borrow-status-filter" name="status" class="form-select">
+                <option value="">ทุกสถานะ</option>
+                <option value="PENDING_APPROVAL">รออนุมัติ</option>
+                <option value="APPROVED">อนุมัติแล้ว</option>
+                <option value="CHECKED_OUT">รับอุปกรณ์แล้ว</option>
+                <option value="RETURN_REQUESTED">แจ้งคืนแล้ว</option>
+                <option value="OVERDUE">เกินกำหนด</option>
+                <option value="RETURNED">คืนเรียบร้อย</option>
+                <option value="REJECTED">ไม่อนุมัติ</option>
+              </select>
+            </div>
+            <div class="col-5 col-md-2">
+              <label for="my-borrow-sort-direction" class="form-label">เรียงตามวันที่</label>
+              <select id="my-borrow-sort-direction" name="sortDirection" class="form-select">
+                <option value="desc">ล่าสุดก่อน</option>
+                <option value="asc">เก่าสุดก่อน</option>
+              </select>
+              <input name="sortBy" type="hidden" value="requested_at">
+            </div>
+            <div class="col-12 col-md-2 d-grid">
+              <button type="submit" class="btn btn-primary">แสดงรายการ</button>
+            </div>
+          </div>
+        </form>
+
+        <p id="my-borrow-results-summary" class="text-body-secondary" role="status" aria-live="polite"></p>
+
+        <div id="my-borrow-loading" class="d-flex align-items-center justify-content-center gap-2 py-5"
+             data-state="loading" role="status" aria-live="polite">
+          <span class="spinner-border spinner-border-sm text-primary" aria-hidden="true"></span>
+          <span>กำลังโหลดรายการยืม</span>
+        </div>
+        <div id="my-borrow-error" class="alert alert-danger d-none" data-state="error" role="alert">
+          <div class="d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-3">
+            <span data-error-message>ไม่สามารถโหลดรายการยืมได้</span>
+            <button type="button" class="btn btn-sm btn-outline-danger" data-action="reload-my-borrow">ลองอีกครั้ง</button>
+          </div>
+        </div>
+        <div id="my-borrow-empty" class="card card-body py-5 text-center d-none" data-state="empty">
+          <i class="bi bi-journal-x fs-1 text-body-secondary mb-3" aria-hidden="true"></i>
+          <h2 class="h5">ไม่พบรายการยืม</h2>
+          <p class="text-body-secondary mb-3">คุณสามารถค้นหาอุปกรณ์ที่พร้อมใช้งานแล้วส่งคำขอยืมได้</p>
+          <button type="button" class="btn btn-primary align-self-center" data-route="equipment">ดูอุปกรณ์ทั้งหมด</button>
+        </div>
+
+        <div id="my-borrow-results" class="d-none" data-state="content">
+          <div id="my-borrow-list" class="d-grid gap-3 d-lg-none" aria-live="polite"></div>
+          <div class="card overflow-hidden d-none d-lg-block">
+            <div class="table-responsive">
+              <table class="table table-hover align-middle mb-0">
+                <caption class="visually-hidden">รายการยืมอุปกรณ์ของฉัน</caption>
+                <thead class="table-light">
+                  <tr>
+                    <th scope="col">เลขที่ / อุปกรณ์</th>
+                    <th scope="col">วันที่ยืม</th>
+                    <th scope="col">กำหนดคืน</th>
+                    <th scope="col">สถานะ</th>
+                    <th scope="col" class="text-end">การทำงาน</th>
+                  </tr>
+                </thead>
+                <tbody id="table-body-my-borrow"></tbody>
+              </table>
+            </div>
+          </div>
+          <nav class="mt-4" aria-label="หน้ารายการยืมของฉัน">
+            <ul id="pagination-my-borrow" class="pagination justify-content-center flex-wrap mb-0"></ul>
+          </nav>
+        </div>
+      </section>
+
+      <section id="my-borrow-history-pane" class="tab-pane fade" role="tabpanel"
+               aria-labelledby="my-borrow-history-tab" tabindex="0">
+        <form id="form-my-history-filter" class="card card-body mb-4" novalidate>
+          <div class="row g-3 align-items-end">
+            <div class="col-12 col-md-8">
+              <label for="my-history-search" class="form-label">ค้นหาประวัติ</label>
+              <input id="my-history-search" name="search" type="search" class="form-control" autocomplete="off"
+                     aria-describedby="my-history-search-help">
+              <div id="my-history-search-help" class="form-text">ค้นหาจากรหัสทรัพย์สิน เลขที่ยืม การดำเนินการ หรือหมายเหตุ</div>
+            </div>
+            <div class="col-12 col-md-4 d-grid d-md-flex justify-content-md-end">
+              <button type="submit" class="btn btn-primary">ค้นหา</button>
+            </div>
+          </div>
+        </form>
+        <div id="my-history-loading" class="py-5 text-center" data-state="loading" role="status">
+          <span class="spinner-border spinner-border-sm text-primary me-2" aria-hidden="true"></span>กำลังโหลดประวัติ
+        </div>
+        <div id="my-history-error" class="alert alert-danger d-none" data-state="error" role="alert"></div>
+        <div id="my-history-empty" class="card card-body py-5 text-center text-body-secondary d-none"
+             data-state="empty">ยังไม่มีประวัติการดำเนินการ</div>
+        <ol id="my-history-list" class="list-group list-group-flush card d-none" data-state="content"
+            aria-live="polite"></ol>
+        <nav class="mt-4" aria-label="หน้าประวัติการยืมของฉัน">
+          <ul id="pagination-my-history" class="pagination justify-content-center flex-wrap mb-0"></ul>
+        </nav>
+      </section>
+    </div>
+
+    <div id="modal-request-return" class="modal fade" tabindex="-1" aria-labelledby="request-return-title"
+         aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <form id="form-request-return" novalidate>
+            <input name="borrow_id" type="hidden">
+            <input name="expected_version" type="hidden">
+            <input name="command_id" type="hidden">
+            <div class="modal-header">
+              <h2 id="request-return-title" class="modal-title fs-5">แจ้งขอคืนอุปกรณ์</h2>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+            </div>
+            <div class="modal-body">
+              <p>ยืนยันว่าคุณพร้อมนำอุปกรณ์และอุปกรณ์ประกอบทั้งหมดส่งคืนให้ผู้ดูแลระบบ</p>
+              <div class="mb-3">
+                <label for="request-return-note" class="form-label">หมายเหตุ <span class="text-body-secondary">(ไม่บังคับ)</span></label>
+                <textarea id="request-return-note" name="note" class="form-control" rows="3" maxlength="1000"></textarea>
+                <div class="invalid-feedback" data-field-error="note"></div>
+              </div>
+              <div class="alert alert-danger d-none mb-0" data-form-error role="alert"></div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">ยังไม่คืน</button>
+              <button type="submit" class="btn btn-primary" data-action="submit-request-return">
+                <span data-submit-label>ยืนยันแจ้งคืน</span>
+                <span class="d-none" data-submit-loading>
+                  <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>กำลังบันทึก
+                </span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+</template>

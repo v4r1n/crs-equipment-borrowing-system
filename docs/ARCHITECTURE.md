@@ -21,7 +21,9 @@ flowchart LR
 
 ### Client
 
-`index.html` เป็น shell เดียวและ include partials ตอน render เพื่อหลีกเลี่ยงข้อจำกัดหลายหน้าของ Apps Script หน้าเว็บเก็บ state ขนาดเล็ก จัด route ด้วย `google.script.history`/`google.script.url` และเรียก server ผ่าน Promise wrapper ของ `google.script.run` ทุก call มี loading, success, error และ confirmation feedback
+`index.html` เป็น shell เดียวและ include เฉพาะ partial ใน allowlist ตอน render เพื่อหลีกเลี่ยงข้อจำกัดหลายหน้าของ Apps Script หน้าเว็บแยก view templates ออกจาก controllers, จัด route ด้วย `google.script.history`/`google.script.url`, และใช้ view token ป้องกัน response เก่าเขียนทับหน้าใหม่
+
+ทุก server call ผ่าน Promise wrapper ของ `google.script.run` และแปล envelope/error เป็น client error แบบเดียว ส่วน mutation สร้าง command ID ก่อนส่งและเก็บใน `sessionStorage` พร้อม fingerprint ของ payload เพื่อให้ retry หลังผลลัพธ์ไม่แน่ชัดใช้คำสั่งเดิมเท่านั้น ทุก action มี loading, success/error ภาษาไทย, field feedback และ confirmation ตามความเสี่ยง
 
 ### API and authorization
 

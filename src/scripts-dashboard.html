@@ -1,0 +1,330 @@
+<script>
+(function (global) {
+  'use strict';
+
+  var CRS = global.CRS = global.CRS || {};
+  var dashboardLoadToken = 0;
+
+  var BORROW_STATUS_LABELS = Object.freeze({
+    PENDING_APPROVAL: 'รออนุมัติ',
+    APPROVED: 'อนุมัติแล้ว',
+    REJECTED: 'ไม่อนุมัติ',
+    CHECKED_OUT: 'รับอุปกรณ์แล้ว',
+    RETURN_REQUESTED: 'รอตรวจรับคืน',
+    RETURNED: 'คืนแล้ว',
+    CANCELLED: 'ยกเลิก',
+    OVERDUE: 'เกินกำหนด'
+  });
+
+  var STATUS_CLASSES = Object.freeze({
+    PENDING_APPROVAL: 'text-bg-warning',
+    APPROVED: 'text-bg-info',
+    REJECTED: 'text-bg-secondary',
+    CHECKED_OUT: 'text-bg-primary',
+    RETURN_REQUESTED: 'text-bg-warning',
+    RETURNED: 'text-bg-success',
+    CANCELLED: 'text-bg-secondary',
+    OVERDUE: 'text-bg-danger'
+  });
+
+  var HISTORY_ACTION_LABELS = Object.freeze({
+    CREATE_ASSET: 'เพิ่มอุปกรณ์',
+    EDIT_ASSET: 'แก้ไขอุปกรณ์',
+    CHANGE_STATUS: 'เปลี่ยนสถานะอุปกรณ์',
+    UPLOAD_ASSET_IMAGE: 'อัปโหลดภาพอุปกรณ์',
+    BORROW_REQUEST: 'ส่งคำขอยืม',
+    BORROW_APPROVE: 'อนุมัติการยืม',
+    BORROW_REJECT: 'ไม่อนุมัติการยืม',
+    BORROW_CHECKOUT: 'จ่ายอุปกรณ์',
+    RETURN_REQUEST: 'แจ้งคืนอุปกรณ์',
+    RETURN_COMPLETE: 'ตรวจรับคืน',
+    CREATE_USER: 'เพิ่มผู้ใช้',
+    EDIT_USER: 'แก้ไขผู้ใช้',
+    CREATE_CATEGORY: 'เพิ่มหมวดหมู่',
+    EDIT_CATEGORY: 'แก้ไขหมวดหมู่'
+  });
+
+  function text(value, fallback) {
+    var result = value === null || value === undefined ? '' : String(value).trim();
+    return result || (fallback || '—');
+  }
+
+  function formatDate(value, options) {
+    if (!value) return '—';
+    if (!options && typeof CRS.formatDate === 'function') return CRS.formatDate(value);
+    var parsed = /^\d{4}-\d{2}-\d{2}$/.test(String(value))
+      ? new Date(String(value) + 'T00:00:00')
+      : new Date(value);
+    if (Number.isNaN(parsed.getTime())) return text(value);
+    return new Intl.DateTimeFormat('th-TH', options || {
+      day: 'numeric', month: 'short', year: 'numeric'
+    }).format(parsed);
+  }
+
+  function formatDateTime(value) {
+    if (typeof CRS.formatDateTime === 'function') return CRS.formatDateTime(value);
+    return formatDate(value, {
+      day: 'numeric', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
+  }
+
+  function element(tag, className, content) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (content !== undefined) node.textContent = text(content, '');
+    return node;
+  }
+
+  function icon(className) {
+    var node = element('i', className);
+    node.setAttribute('aria-hidden', 'true');
+    return node;
+  }
+
+  function isAdmin() {
+    if (typeof CRS.isAdmin === 'function') return CRS.isAdmin();
+    var bootstrap = (CRS.state && CRS.state.bootstrap) || CRS.bootstrap || {};
+    return Boolean(bootstrap.session &&
+      (bootstrap.session.isAdmin || bootstrap.session.role === 'ADMIN'));
+  }
+
+  function navigate(view, params) {
+    if (typeof CRS.navigate === 'function') {
+      CRS.navigate(view, params || {});
+      return;
+    }
+    var query = new URLSearchParams({ view: view });
+    Object.keys(params || {}).forEach(function (key) {
+      if (params[key] !== '' && params[key] !== null && params[key] !== undefined) {
+        query.set(key, params[key]);
+      }
+    });
+    global.location.href = '?' + query.toString();
+  }
+
+  function showState(page, state, error) {
+    var loading = page.querySelector('#dashboard-loading');
+    var content = page.querySelector('#dashboard-content');
+    var errorBox = page.querySelector('#dashboard-error');
+    loading.classList.toggle('d-none', state !== 'loading');
+    content.classList.toggle('d-none', state !== 'content');
+    errorBox.classList.toggle('d-none', state !== 'error');
+    page.setAttribute('aria-busy', state === 'loading' ? 'true' : 'false');
+    if (state === 'error') {
+      errorBox.querySelector('[data-error-message]').textContent =
+        (error && error.message) || 'ไม่สามารถโหลดข้อมูลแดชบอร์ดได้';
+    }
+  }
+
+  function metricDefinitions(admin) {
+    if (admin) {
+      return [
+        ['total', 'อุปกรณ์ทั้งหมด', 'bi-boxes', 'primary'],
+        ['available', 'พร้อมใช้งาน', 'bi-check-circle', 'success'],
+        ['borrowed', 'กำลังถูกยืม', 'bi-arrow-left-right', 'primary'],
+        ['pending', 'รออนุมัติ', 'bi-hourglass-split', 'warning'],
+        ['overdue', 'เกินกำหนด', 'bi-exclamation-octagon', 'danger'],
+        ['maintenance', 'ซ่อมบำรุง', 'bi-tools', 'secondary'],
+        ['damaged', 'ชำรุด', 'bi-bandaid', 'danger'],
+        ['lost', 'สูญหาย', 'bi-question-circle', 'dark']
+      ];
+    }
+    return [
+      ['total_requests', 'คำขอทั้งหมด', 'bi-journal-text', 'primary'],
+      ['active', 'รายการที่กำลังดำเนินการ', 'bi-arrow-left-right', 'primary'],
+      ['pending', 'รออนุมัติ', 'bi-hourglass-split', 'warning'],
+      ['approved', 'อนุมัติแล้ว', 'bi-check-circle', 'info'],
+      ['checked_out', 'รับอุปกรณ์แล้ว', 'bi-box-arrow-up-right', 'primary'],
+      ['return_requested', 'รอตรวจรับคืน', 'bi-arrow-return-left', 'warning'],
+      ['overdue', 'เกินกำหนด', 'bi-exclamation-octagon', 'danger']
+    ];
+  }
+
+  function renderMetrics(page, metrics, admin) {
+    var host = page.querySelector('#dashboard-metrics');
+    host.replaceChildren();
+    metricDefinitions(admin).forEach(function (definition) {
+      var column = element('div', 'col-6 col-md-4 col-xl-3');
+      column.setAttribute('role', 'listitem');
+      var card = element('article', 'card h-100 border-0 shadow-sm');
+      var body = element('div', 'card-body d-flex align-items-center gap-3');
+      var marker = element('span', 'rounded-circle d-inline-flex align-items-center justify-content-center bg-' +
+        definition[3] + '-subtle text-' + definition[3]);
+      marker.style.width = '2.75rem';
+      marker.style.height = '2.75rem';
+      marker.appendChild(icon('bi ' + definition[2] + ' fs-5'));
+      var copy = element('div');
+      copy.appendChild(element('p', 'small text-body-secondary mb-0', definition[1]));
+      copy.appendChild(element('strong', 'fs-4 lh-sm', Number(metrics[definition[0]] || 0).toLocaleString('th-TH')));
+      body.append(marker, copy);
+      card.appendChild(body);
+      column.appendChild(card);
+      host.appendChild(column);
+    });
+  }
+
+  function statusBadge(record) {
+    var status = record.is_overdue ? 'OVERDUE' : (record.effective_status || record.status || '');
+    return element('span', 'badge rounded-pill ' + (STATUS_CLASSES[status] || 'text-bg-secondary'),
+      BORROW_STATUS_LABELS[status] || status || 'ไม่ระบุ');
+  }
+
+  function borrowListItem(record, emphasize) {
+    var item = element('li', 'list-group-item py-3');
+    var row = element('div', 'd-flex align-items-start justify-content-between gap-3');
+    var copy = element('div', 'min-w-0');
+    var nameButton = element('button', 'btn btn-link text-start text-decoration-none p-0 fw-semibold text-break',
+      text(record.asset_name));
+    nameButton.type = 'button';
+    nameButton.addEventListener('click', function () {
+      if (isAdmin()) navigate('admin', { tab: 'borrowing', search: record.borrow_id, status: '' });
+      else navigate('my-borrow', { highlight: record.borrow_id });
+    });
+    copy.appendChild(nameButton);
+    var meta = element('p', 'small mb-0 ' + (emphasize ? 'text-danger' : 'text-body-secondary'));
+    meta.textContent = text(record.borrow_id) +
+      (isAdmin() && record.user_name ? ' • ' + text(record.user_name) : '') +
+      ' • กำหนดคืน ' + formatDate(record.due_date);
+    copy.appendChild(meta);
+    row.append(copy, statusBadge(record));
+    item.appendChild(row);
+    return item;
+  }
+
+  function historyListItem(record) {
+    var item = element('li', 'list-group-item py-3');
+    var row = element('div', 'd-flex align-items-start justify-content-between gap-3');
+    var copy = element('div', 'min-w-0');
+    var target = record.borrow_id
+      ? (isAdmin()
+        ? ['admin', { tab: 'borrowing', search: record.borrow_id, status: '' }]
+        : ['my-borrow', { highlight: record.borrow_id }])
+      : (record.asset_id ? ['equipment-detail', { id: record.asset_id }] : null);
+    var actionText = typeof CRS.actionLabel === 'function'
+      ? CRS.actionLabel(record.action)
+      : (HISTORY_ACTION_LABELS[record.action] || text(record.action));
+    var title = target
+      ? element('button', 'btn btn-link text-start text-decoration-none p-0 fw-semibold text-break',
+        actionText)
+      : element('p', 'fw-semibold mb-0', actionText);
+    if (target) {
+      title.type = 'button';
+      title.addEventListener('click', function () { navigate(target[0], target[1]); });
+    }
+    copy.appendChild(title);
+    if (record.note) copy.appendChild(element('p', 'small text-body-secondary mb-0 text-break', record.note));
+    row.append(copy, element('time', 'small text-body-secondary text-nowrap', formatDateTime(record.timestamp)));
+    item.appendChild(row);
+    return item;
+  }
+
+  function renderList(page, selector, emptySelector, records, factory) {
+    var host = page.querySelector(selector);
+    var empty = page.querySelector(emptySelector);
+    host.replaceChildren();
+    records = Array.isArray(records) ? records : [];
+    empty.classList.toggle('d-none', records.length > 0);
+    records.forEach(function (record) { host.appendChild(factory(record)); });
+  }
+
+  function renderMostBorrowed(page, records) {
+    renderList(page, '#dashboard-most-borrowed', '#dashboard-most-borrowed-empty', records,
+      function (record) {
+        var item = element('li', 'list-group-item py-3 ps-5');
+        var row = element('div', 'd-flex align-items-center justify-content-between gap-3');
+        var button = element('button', 'btn btn-link text-start text-decoration-none p-0 text-break',
+          text(record.asset_name));
+        button.type = 'button';
+        button.addEventListener('click', function () {
+          navigate('equipment-detail', { id: record.asset_id });
+        });
+        row.append(button, element('span', 'badge rounded-pill text-bg-primary',
+          Number(record.borrow_count || 0).toLocaleString('th-TH') + ' ครั้ง'));
+        item.appendChild(row);
+        return item;
+      });
+  }
+
+  function renderDashboard(page, data) {
+    var admin = isAdmin();
+    renderMetrics(page, data.metrics || {}, admin);
+    var generatedAt = page.querySelector('#dashboard-generated-at');
+    generatedAt.textContent = 'อัปเดต ' + formatDateTime(data.generated_at);
+    generatedAt.dateTime = data.generated_at || '';
+    var dueThrough = page.querySelector('#dashboard-due-soon-through');
+    dueThrough.textContent = 'ถึง ' + formatDate(data.due_soon_through);
+    dueThrough.dateTime = data.due_soon_through || '';
+
+    var recent = admin ? (data.latest_borrows || []) : (data.recent_borrows || []);
+    CRS.setText(page.querySelector('[data-dashboard-latest-link]'),
+      admin ? 'จัดการรายการยืม' : 'ดูรายการของฉัน');
+    renderList(page, '#dashboard-latest', '#dashboard-latest-empty', recent,
+      function (record) { return borrowListItem(record, false); });
+    renderList(page, '#dashboard-due-soon', '#dashboard-due-soon-empty', data.due_soon,
+      function (record) { return borrowListItem(record, false); });
+    renderList(page, '#dashboard-overdue', '#dashboard-overdue-empty', data.overdue,
+      function (record) { return borrowListItem(record, true); });
+
+    var adminSections = page.querySelectorAll('[data-admin-only]');
+    adminSections.forEach(function (node) {
+      node.hidden = !admin;
+      node.classList.toggle('d-none', !admin);
+    });
+    if (admin) renderMostBorrowed(page, data.most_borrowed || []);
+  }
+
+  async function loadDashboard(page) {
+    if (!page || !CRS.api || typeof CRS.api.getDashboard !== 'function') return;
+    var token = ++dashboardLoadToken;
+    showState(page, 'loading');
+    try {
+      var data = await CRS.api.getDashboard();
+      if (token !== dashboardLoadToken || !page.isConnected) return;
+      renderDashboard(page, data || {});
+      showState(page, 'content');
+    } catch (error) {
+      if (token !== dashboardLoadToken || !page.isConnected) return;
+      showState(page, 'error', error);
+    }
+  }
+
+  function bindDashboard(page) {
+    if (page.dataset.dashboardBound === 'true') return;
+    page.dataset.dashboardBound = 'true';
+    page.addEventListener('click', function (event) {
+      var latestLink = event.target.closest('[data-dashboard-latest-link]');
+      if (latestLink) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (isAdmin()) navigate('admin', { tab: 'borrowing', status: '' });
+        else navigate('my-borrow', {});
+        return;
+      }
+      var refresh = event.target.closest('[data-action="refresh-dashboard"]');
+      if (refresh) {
+        event.preventDefault();
+        loadDashboard(page);
+      }
+      var route = event.target.closest('[data-route-filter]');
+      if (route) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (isAdmin()) {
+          navigate('admin', { tab: 'borrowing', status: route.dataset.routeFilter });
+        } else {
+          navigate(route.dataset.route, { status: route.dataset.routeFilter });
+        }
+      }
+    });
+  }
+
+  function render() {
+    var page = CRS.mount('view-dashboard-template');
+    bindDashboard(page);
+    return loadDashboard(page);
+  }
+
+  CRS.registerRoute('dashboard', render);
+})(window);
+</script>

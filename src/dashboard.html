@@ -1,0 +1,111 @@
+<template id="view-dashboard-template">
+  <section id="page-dashboard" class="app-page" data-page="dashboard" aria-labelledby="dashboard-title">
+    <header class="d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-3 mb-4">
+      <div>
+        <p class="text-body-secondary small mb-1">ภาพรวมการยืม–คืนอุปกรณ์</p>
+        <h1 id="dashboard-title" class="h3 mb-0">แดชบอร์ด</h1>
+      </div>
+      <button type="button" class="btn btn-outline-primary align-self-start align-self-sm-center"
+              data-action="refresh-dashboard" aria-controls="dashboard-content">
+        <i class="bi bi-arrow-clockwise me-2" aria-hidden="true"></i>รีเฟรชข้อมูล
+      </button>
+    </header>
+
+    <div id="dashboard-loading" class="d-flex align-items-center gap-2 py-5 justify-content-center"
+         data-state="loading" role="status" aria-live="polite">
+      <span class="spinner-border spinner-border-sm text-primary" aria-hidden="true"></span>
+      <span>กำลังโหลดข้อมูลแดชบอร์ด</span>
+    </div>
+
+    <div id="dashboard-error" class="alert alert-danger d-none" data-state="error" role="alert">
+      <div class="d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-3">
+        <span data-error-message>ไม่สามารถโหลดข้อมูลแดชบอร์ดได้</span>
+        <button type="button" class="btn btn-sm btn-outline-danger" data-action="refresh-dashboard">ลองอีกครั้ง</button>
+      </div>
+    </div>
+
+    <div id="dashboard-content" class="d-none" data-state="content">
+      <section class="mb-4" aria-labelledby="dashboard-metrics-title">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+          <h2 id="dashboard-metrics-title" class="h5 mb-0">ตัวเลขสำคัญ</h2>
+          <time id="dashboard-generated-at" class="small text-body-secondary"></time>
+        </div>
+        <div id="dashboard-metrics" class="row g-3" role="list" aria-live="polite"></div>
+      </section>
+
+      <div class="row g-4">
+        <div class="col-12 col-xl-7">
+          <section class="card h-100" aria-labelledby="dashboard-latest-title">
+            <div class="card-header bg-body d-flex align-items-center justify-content-between gap-3 py-3">
+              <h2 id="dashboard-latest-title" class="h5 mb-0">รายการล่าสุด</h2>
+              <button type="button" class="btn btn-sm btn-link text-decoration-none" data-route="my-borrow"
+                      data-dashboard-latest-link>
+                ดูรายการของฉัน
+              </button>
+            </div>
+            <div class="card-body p-0">
+              <div id="dashboard-latest-loading" class="py-4 text-center text-body-secondary d-none"
+                   data-state="loading" role="status">กำลังโหลดรายการล่าสุด</div>
+              <div id="dashboard-latest-error" class="alert alert-danger m-3 d-none" data-state="error" role="alert"></div>
+              <div id="dashboard-latest-empty" class="py-5 px-3 text-center text-body-secondary d-none"
+                   data-state="empty">
+                <i class="bi bi-inbox fs-2 d-block mb-2" aria-hidden="true"></i>
+                ยังไม่มีรายการยืม
+              </div>
+              <ul id="dashboard-latest" class="list-group list-group-flush" aria-live="polite"></ul>
+            </div>
+          </section>
+        </div>
+
+        <div class="col-12 col-xl-5">
+          <section class="card h-100 border-warning-subtle" aria-labelledby="dashboard-due-soon-title">
+            <div class="card-header bg-warning-subtle d-flex align-items-center justify-content-between gap-3 py-3">
+              <h2 id="dashboard-due-soon-title" class="h5 mb-0">ใกล้ถึงกำหนดคืน</h2>
+              <time id="dashboard-due-soon-through" class="small text-body-secondary"></time>
+            </div>
+            <div class="card-body p-0">
+              <div id="dashboard-due-soon-empty" class="py-5 px-3 text-center text-body-secondary d-none"
+                   data-state="empty">
+                <i class="bi bi-calendar-check fs-2 d-block mb-2 text-success" aria-hidden="true"></i>
+                ไม่มีรายการที่ใกล้ถึงกำหนดคืน
+              </div>
+              <ul id="dashboard-due-soon" class="list-group list-group-flush" aria-live="polite"></ul>
+            </div>
+          </section>
+        </div>
+
+        <div class="col-12 col-lg-6">
+          <section class="card h-100 border-danger-subtle" aria-labelledby="dashboard-overdue-title">
+            <div class="card-header bg-danger-subtle d-flex align-items-center justify-content-between gap-3 py-3">
+              <h2 id="dashboard-overdue-title" class="h5 mb-0">เกินกำหนดคืน</h2>
+              <button type="button" class="btn btn-sm btn-link link-danger text-decoration-none"
+                      data-route="my-borrow" data-route-filter="OVERDUE">ดูทั้งหมด</button>
+            </div>
+            <div class="card-body p-0">
+              <div id="dashboard-overdue-empty" class="py-5 px-3 text-center text-body-secondary d-none"
+                   data-state="empty">
+                <i class="bi bi-shield-check fs-2 d-block mb-2 text-success" aria-hidden="true"></i>
+                ไม่มีรายการเกินกำหนด
+              </div>
+              <ul id="dashboard-overdue" class="list-group list-group-flush" aria-live="assertive"></ul>
+            </div>
+          </section>
+        </div>
+
+        <div class="col-12 col-lg-6" data-admin-only>
+          <section class="card h-100" aria-labelledby="dashboard-most-borrowed-title">
+            <div class="card-header bg-body py-3">
+              <h2 id="dashboard-most-borrowed-title" class="h5 mb-0">อุปกรณ์ที่ถูกยืมบ่อย</h2>
+            </div>
+            <div class="card-body p-0">
+              <div id="dashboard-most-borrowed-empty" class="py-5 px-3 text-center text-body-secondary d-none"
+                   data-state="empty">ยังไม่มีสถิติการยืมอุปกรณ์</div>
+              <ol id="dashboard-most-borrowed" class="list-group list-group-numbered list-group-flush"
+                  aria-live="polite"></ol>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </section>
+</template>

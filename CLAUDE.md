@@ -59,4 +59,4 @@ Complete this checklist at the end of every phase:
 
 ## Current delivery status
 
-Phases 1–3 are complete. Resume from the phase recorded in `docs/MEMORY.md`.
+Phases 1–4 are complete. Resume from the phase recorded in `docs/MEMORY.md`.

@@ -1,0 +1,800 @@
+<template id="view-admin-template">
+  <section id="page-admin" class="app-page" data-page="admin" aria-labelledby="admin-title" data-admin-only>
+    <header class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+      <div>
+        <p class="text-body-secondary small mb-1">อนุมัติรายการและดูแลข้อมูลหลักของระบบ</p>
+        <h1 id="admin-title" class="h3 mb-0">ศูนย์ผู้ดูแลระบบ</h1>
+      </div>
+      <button type="button" class="btn btn-outline-primary align-self-start align-self-md-center"
+              data-action="refresh-admin-tab">
+        <i class="bi bi-arrow-clockwise me-2" aria-hidden="true"></i>รีเฟรชแท็บนี้
+      </button>
+    </header>
+
+    <nav class="admin-tabs-scroll mb-4" aria-label="ส่วนจัดการระบบ">
+      <ul class="nav nav-pills flex-nowrap" id="admin-tabs" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button id="admin-borrowing-tab" class="nav-link active text-nowrap" type="button" role="tab"
+                  data-bs-toggle="tab" data-bs-target="#admin-borrowing"
+                  aria-controls="admin-borrowing" aria-selected="true">
+            <i class="bi bi-arrow-left-right me-2" aria-hidden="true"></i>ยืม–คืน
+            <span id="admin-borrow-attention-count" class="badge rounded-pill text-bg-danger ms-1 d-none"></span>
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button id="admin-assets-tab" class="nav-link text-nowrap" type="button" role="tab"
+                  data-bs-toggle="tab" data-bs-target="#admin-assets"
+                  aria-controls="admin-assets" aria-selected="false">
+            <i class="bi bi-box-seam me-2" aria-hidden="true"></i>อุปกรณ์
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button id="admin-users-tab" class="nav-link text-nowrap" type="button" role="tab"
+                  data-bs-toggle="tab" data-bs-target="#admin-users"
+                  aria-controls="admin-users" aria-selected="false">
+            <i class="bi bi-people me-2" aria-hidden="true"></i>ผู้ใช้
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button id="admin-categories-tab" class="nav-link text-nowrap" type="button" role="tab"
+                  data-bs-toggle="tab" data-bs-target="#admin-categories"
+                  aria-controls="admin-categories" aria-selected="false">
+            <i class="bi bi-tags me-2" aria-hidden="true"></i>หมวดหมู่
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button id="admin-history-tab" class="nav-link text-nowrap" type="button" role="tab"
+                  data-bs-toggle="tab" data-bs-target="#admin-history"
+                  aria-controls="admin-history" aria-selected="false">
+            <i class="bi bi-clock-history me-2" aria-hidden="true"></i>ประวัติ
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button id="admin-system-tab" class="nav-link text-nowrap" type="button" role="tab"
+                  data-bs-toggle="tab" data-bs-target="#admin-system"
+                  aria-controls="admin-system" aria-selected="false">
+            <i class="bi bi-gear me-2" aria-hidden="true"></i>ระบบ
+          </button>
+        </li>
+      </ul>
+    </nav>
+
+    <div class="tab-content">
+      <section id="admin-borrowing" class="tab-pane fade show active" role="tabpanel"
+               aria-labelledby="admin-borrowing-tab" tabindex="0">
+        <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-3">
+          <div>
+            <h2 class="h4 mb-1">จัดการรายการยืม–คืน</h2>
+            <p class="text-body-secondary mb-0">ตรวจคำขอ ส่งมอบ และตรวจรับคืนตามลำดับสถานะ</p>
+          </div>
+        </div>
+
+        <div id="admin-borrow-quick-filters" class="d-flex gap-2 overflow-x-auto pb-2 mb-2" role="group"
+             aria-label="กรองรายการตามงานที่ต้องดำเนินการ">
+          <button type="button" class="btn btn-sm btn-primary text-nowrap" data-action="filter-admin-borrow"
+                  data-status="PENDING_APPROVAL" aria-pressed="true">รออนุมัติ</button>
+          <button type="button" class="btn btn-sm btn-outline-primary text-nowrap" data-action="filter-admin-borrow"
+                  data-status="APPROVED" aria-pressed="false">รอส่งมอบ</button>
+          <button type="button" class="btn btn-sm btn-outline-primary text-nowrap" data-action="filter-admin-borrow"
+                  data-status="RETURN_REQUESTED" aria-pressed="false">รอตรวจรับคืน</button>
+          <button type="button" class="btn btn-sm btn-outline-danger text-nowrap" data-action="filter-admin-borrow"
+                  data-status="OVERDUE" aria-pressed="false">เกินกำหนด</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap" data-action="filter-admin-borrow"
+                  data-status="" aria-pressed="false">ทั้งหมด</button>
+        </div>
+
+        <form id="form-admin-borrow-filter" class="card card-body mb-4" novalidate>
+          <div class="row g-3 align-items-end">
+            <div class="col-12 col-lg-5">
+              <label for="admin-borrow-search" class="form-label">ค้นหารายการ</label>
+              <input id="admin-borrow-search" name="search" type="search" class="form-control" autocomplete="off"
+                     aria-describedby="admin-borrow-search-help">
+              <div id="admin-borrow-search-help" class="form-text">เลขที่ยืม ผู้ยืม อีเมล รหัสทรัพย์สิน ชื่อ หรือ SKU</div>
+            </div>
+            <div class="col-6 col-md-4 col-lg-3">
+              <label for="admin-borrow-status" class="form-label">สถานะ</label>
+              <select id="admin-borrow-status" name="status" class="form-select">
+                <option value="">ทุกสถานะ</option>
+                <option value="PENDING_APPROVAL">รออนุมัติ</option>
+                <option value="APPROVED">อนุมัติแล้ว</option>
+                <option value="CHECKED_OUT">ส่งมอบแล้ว</option>
+                <option value="RETURN_REQUESTED">แจ้งคืนแล้ว</option>
+                <option value="OVERDUE">เกินกำหนด</option>
+                <option value="RETURNED">คืนเรียบร้อย</option>
+                <option value="REJECTED">ไม่อนุมัติ</option>
+              </select>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+              <label for="admin-borrow-sort" class="form-label">เรียงตาม</label>
+              <select id="admin-borrow-sort" name="sortBy" class="form-select">
+                <option value="requested_at">เวลาส่งคำขอ</option>
+                <option value="due_date">กำหนดคืน</option>
+                <option value="borrow_date">วันที่ยืม</option>
+                <option value="status">สถานะ</option>
+                <option value="asset_name">ชื่ออุปกรณ์</option>
+                <option value="user_name">ชื่อผู้ยืม</option>
+              </select>
+              <input name="sortDirection" type="hidden" value="desc">
+            </div>
+            <div class="col-12 col-md-4 col-lg-2 d-grid">
+              <button type="submit" class="btn btn-primary">แสดงรายการ</button>
+            </div>
+          </div>
+        </form>
+
+        <p id="admin-borrow-results-summary" class="text-body-secondary" role="status" aria-live="polite"></p>
+        <div id="admin-borrow-loading" class="py-5 text-center" data-state="loading" role="status">
+          <span class="spinner-border spinner-border-sm text-primary me-2" aria-hidden="true"></span>กำลังโหลดรายการยืม–คืน
+        </div>
+        <div id="admin-borrow-error" class="alert alert-danger d-none" data-state="error" role="alert"></div>
+        <div id="admin-borrow-empty" class="card card-body py-5 text-center text-body-secondary d-none"
+             data-state="empty">ไม่พบรายการในสถานะที่เลือก</div>
+        <div id="admin-borrow-results" class="card overflow-hidden d-none" data-state="content">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <caption class="visually-hidden">รายการยืม–คืนสำหรับผู้ดูแลระบบ</caption>
+              <thead class="table-light">
+                <tr>
+                  <th scope="col">รายการ / ผู้ยืม</th>
+                  <th scope="col">อุปกรณ์</th>
+                  <th scope="col">ช่วงยืม</th>
+                  <th scope="col">สถานะ</th>
+                  <th scope="col" class="text-end">การทำงาน</th>
+                </tr>
+              </thead>
+              <tbody id="table-body-admin-borrow"></tbody>
+            </table>
+          </div>
+        </div>
+        <nav class="mt-4" aria-label="หน้ารายการยืม–คืนสำหรับผู้ดูแลระบบ">
+          <ul id="pagination-admin-borrow" class="pagination justify-content-center flex-wrap mb-0"></ul>
+        </nav>
+      </section>
+
+      <section id="admin-assets" class="tab-pane fade" role="tabpanel"
+               aria-labelledby="admin-assets-tab" tabindex="0">
+        <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+          <div>
+            <h2 class="h4 mb-1">จัดการอุปกรณ์</h2>
+            <p class="text-body-secondary mb-0">เพิ่ม แก้ไข เปลี่ยนภาพ และกำหนดสถานะทรัพย์สินรายชิ้น</p>
+          </div>
+          <div class="d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-outline-primary" data-route="equipment">ดูอุปกรณ์ทั้งหมด</button>
+            <button type="button" class="btn btn-primary" data-action="add-equipment">
+              <i class="bi bi-plus-lg me-2" aria-hidden="true"></i>เพิ่มอุปกรณ์
+            </button>
+          </div>
+        </div>
+        <div id="admin-asset-status-summary" class="row g-3 mb-4" aria-live="polite"></div>
+        <div class="card">
+          <div class="card-body p-4">
+            <div class="d-flex gap-3">
+              <i class="bi bi-info-circle text-primary fs-4 flex-shrink-0" aria-hidden="true"></i>
+              <div>
+                <h3 class="h5">การแก้ไขข้อมูลรายชิ้น</h3>
+                <p class="mb-3">เลือกอุปกรณ์จากหน้ารายการเพื่อดูรายละเอียด อุปกรณ์ประกอบ และคำสั่งสำหรับผู้ดูแลระบบ</p>
+                <button type="button" class="btn btn-outline-primary" data-route="equipment">ไปหน้ารายการอุปกรณ์</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="admin-users" class="tab-pane fade" role="tabpanel"
+               aria-labelledby="admin-users-tab" tabindex="0">
+        <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+          <div>
+            <h2 class="h4 mb-1">ผู้ใช้</h2>
+            <p class="text-body-secondary mb-0">กำหนดข้อมูลหน่วยงาน สิทธิ์ และสถานะเข้าใช้งาน</p>
+          </div>
+          <button type="button" class="btn btn-primary align-self-start align-self-md-center" data-action="add-user">
+            <i class="bi bi-person-plus me-2" aria-hidden="true"></i>เพิ่มผู้ใช้
+          </button>
+        </div>
+        <form id="form-admin-user-filter" class="card card-body mb-4" novalidate>
+          <div class="row g-3 align-items-end">
+            <div class="col-12 col-lg-5">
+              <label for="admin-user-search" class="form-label">ค้นหาผู้ใช้</label>
+              <input id="admin-user-search" name="search" type="search" class="form-control" autocomplete="off">
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+              <label for="admin-user-role" class="form-label">สิทธิ์</label>
+              <select id="admin-user-role" name="role" class="form-select">
+                <option value="">ทุกสิทธิ์</option>
+                <option value="USER">ผู้ใช้</option>
+                <option value="ADMIN">ผู้ดูแลระบบ</option>
+              </select>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+              <label for="admin-user-status" class="form-label">สถานะ</label>
+              <select id="admin-user-status" name="status" class="form-select">
+                <option value="">ทุกสถานะ</option>
+                <option value="ACTIVE">ใช้งาน</option>
+                <option value="INACTIVE">ปิดใช้งาน</option>
+              </select>
+            </div>
+            <div class="col-12 col-md-4 col-lg-3 d-flex gap-2">
+              <button type="submit" class="btn btn-primary flex-grow-1">ค้นหา</button>
+              <button type="reset" class="btn btn-outline-secondary" data-action="clear-admin-user-filter">ล้าง</button>
+            </div>
+          </div>
+        </form>
+        <div id="admin-users-loading" class="py-5 text-center" data-state="loading" role="status">
+          <span class="spinner-border spinner-border-sm text-primary me-2" aria-hidden="true"></span>กำลังโหลดผู้ใช้
+        </div>
+        <div id="admin-users-error" class="alert alert-danger d-none" data-state="error" role="alert"></div>
+        <div id="admin-users-empty" class="card card-body py-5 text-center text-body-secondary d-none"
+             data-state="empty">ไม่พบผู้ใช้ตามตัวกรอง</div>
+        <div id="admin-users-results" class="card overflow-hidden d-none" data-state="content">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <caption class="visually-hidden">ผู้ใช้ในระบบ</caption>
+              <thead class="table-light">
+                <tr>
+                  <th scope="col">ผู้ใช้</th>
+                  <th scope="col">หน่วยงาน</th>
+                  <th scope="col">สิทธิ์</th>
+                  <th scope="col">สถานะ</th>
+                  <th scope="col">เข้าใช้ล่าสุด</th>
+                  <th scope="col" class="text-end">การทำงาน</th>
+                </tr>
+              </thead>
+              <tbody id="table-body-admin-users"></tbody>
+            </table>
+          </div>
+        </div>
+        <nav class="mt-4" aria-label="หน้ารายชื่อผู้ใช้">
+          <ul id="pagination-admin-users" class="pagination justify-content-center flex-wrap mb-0"></ul>
+        </nav>
+      </section>
+
+      <section id="admin-categories" class="tab-pane fade" role="tabpanel"
+               aria-labelledby="admin-categories-tab" tabindex="0">
+        <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+          <div>
+            <h2 class="h4 mb-1">หมวดหมู่อุปกรณ์</h2>
+            <p class="text-body-secondary mb-0">จัดลำดับและกำหนด Prefix สำหรับการแบ่งกลุ่ม</p>
+          </div>
+          <button type="button" class="btn btn-primary align-self-start align-self-md-center" data-action="add-category">
+            <i class="bi bi-plus-lg me-2" aria-hidden="true"></i>เพิ่มหมวดหมู่
+          </button>
+        </div>
+        <form id="form-admin-category-filter" class="card card-body mb-4" novalidate>
+          <div class="row g-3 align-items-end">
+            <div class="col-12 col-md-7">
+              <label for="admin-category-search" class="form-label">ค้นหาหมวดหมู่</label>
+              <input id="admin-category-search" name="search" type="search" class="form-control" autocomplete="off">
+            </div>
+            <div class="col-7 col-md-3">
+              <label for="admin-category-status" class="form-label">สถานะ</label>
+              <select id="admin-category-status" name="status" class="form-select">
+                <option value="">ทุกสถานะ</option>
+                <option value="ACTIVE">ใช้งาน</option>
+                <option value="INACTIVE">ปิดใช้งาน</option>
+              </select>
+            </div>
+            <div class="col-5 col-md-2 d-grid">
+              <button type="submit" class="btn btn-primary">ค้นหา</button>
+            </div>
+          </div>
+        </form>
+        <div id="admin-categories-loading" class="py-5 text-center" data-state="loading" role="status">
+          <span class="spinner-border spinner-border-sm text-primary me-2" aria-hidden="true"></span>กำลังโหลดหมวดหมู่
+        </div>
+        <div id="admin-categories-error" class="alert alert-danger d-none" data-state="error" role="alert"></div>
+        <div id="admin-categories-empty" class="card card-body py-5 text-center text-body-secondary d-none"
+             data-state="empty">ไม่พบหมวดหมู่ตามตัวกรอง</div>
+        <div id="admin-categories-results" class="card overflow-hidden d-none" data-state="content">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <caption class="visually-hidden">หมวดหมู่อุปกรณ์</caption>
+              <thead class="table-light">
+                <tr>
+                  <th scope="col">ลำดับ</th>
+                  <th scope="col">หมวดหมู่</th>
+                  <th scope="col">Prefix</th>
+                  <th scope="col">สถานะ</th>
+                  <th scope="col">แก้ไขล่าสุด</th>
+                  <th scope="col" class="text-end">การทำงาน</th>
+                </tr>
+              </thead>
+              <tbody id="table-body-admin-categories"></tbody>
+            </table>
+          </div>
+        </div>
+        <nav class="mt-4" aria-label="หน้ารายการหมวดหมู่">
+          <ul id="pagination-admin-categories" class="pagination justify-content-center flex-wrap mb-0"></ul>
+        </nav>
+      </section>
+
+      <section id="admin-history" class="tab-pane fade" role="tabpanel"
+               aria-labelledby="admin-history-tab" tabindex="0">
+        <div class="mb-4">
+          <h2 class="h4 mb-1">ประวัติการเปลี่ยนแปลง</h2>
+          <p class="text-body-secondary mb-0">ตรวจสอบผู้ดำเนินการ สถานะก่อน–หลัง และเลขอ้างอิง</p>
+        </div>
+        <form id="form-admin-history-filter" class="card card-body mb-4" novalidate>
+          <div class="row g-3 align-items-end">
+            <div class="col-12 col-lg-5">
+              <label for="admin-history-search" class="form-label">ค้นหาประวัติ</label>
+              <input id="admin-history-search" name="search" type="search" class="form-control" autocomplete="off">
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+              <label for="admin-history-entity" class="form-label">ประเภทข้อมูล</label>
+              <select id="admin-history-entity" name="entityType" class="form-select">
+                <option value="">ทุกประเภท</option>
+                <option value="EQUIPMENT">อุปกรณ์</option>
+                <option value="BORROW">รายการยืม</option>
+                <option value="USER">ผู้ใช้</option>
+                <option value="CATEGORY">หมวดหมู่</option>
+              </select>
+            </div>
+            <div class="col-6 col-md-4 col-lg-3">
+              <label for="admin-history-action" class="form-label">การดำเนินการ</label>
+              <input id="admin-history-action" name="action" type="text" class="form-control" autocomplete="off">
+            </div>
+            <div class="col-12 col-md-4 col-lg-2 d-grid">
+              <button type="submit" class="btn btn-primary">ค้นหา</button>
+            </div>
+          </div>
+        </form>
+        <div id="admin-history-loading" class="py-5 text-center" data-state="loading" role="status">
+          <span class="spinner-border spinner-border-sm text-primary me-2" aria-hidden="true"></span>กำลังโหลดประวัติ
+        </div>
+        <div id="admin-history-error" class="alert alert-danger d-none" data-state="error" role="alert"></div>
+        <div id="admin-history-empty" class="card card-body py-5 text-center text-body-secondary d-none"
+             data-state="empty">ไม่พบประวัติตามตัวกรอง</div>
+        <div id="admin-history-results" class="card overflow-hidden d-none" data-state="content">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <caption class="visually-hidden">ประวัติการเปลี่ยนแปลงระบบ</caption>
+              <thead class="table-light">
+                <tr>
+                  <th scope="col">เวลา / ผู้ดำเนินการ</th>
+                  <th scope="col">การดำเนินการ</th>
+                  <th scope="col">ข้อมูลอ้างอิง</th>
+                  <th scope="col">สถานะก่อน–หลัง</th>
+                  <th scope="col">หมายเหตุ</th>
+                </tr>
+              </thead>
+              <tbody id="table-body-admin-history"></tbody>
+            </table>
+          </div>
+        </div>
+        <nav class="mt-4" aria-label="หน้าประวัติการเปลี่ยนแปลง">
+          <ul id="pagination-admin-history" class="pagination justify-content-center flex-wrap mb-0"></ul>
+        </nav>
+      </section>
+
+      <section id="admin-system" class="tab-pane fade" role="tabpanel"
+               aria-labelledby="admin-system-tab" tabindex="0">
+        <div class="mb-4">
+          <h2 class="h4 mb-1">ความสมบูรณ์ของระบบ</h2>
+          <p class="text-body-secondary mb-0">ตรวจความสอดคล้องของข้อมูลและกู้คืนคำสั่งที่หยุดกลางทาง</p>
+        </div>
+
+        <section class="card mb-4" aria-labelledby="admin-integrity-title">
+          <div class="card-body p-4">
+            <div class="d-flex flex-column flex-lg-row align-items-lg-start justify-content-between gap-3">
+              <div>
+                <h3 id="admin-integrity-title" class="h5">ตรวจสอบความสมบูรณ์ของข้อมูล</h3>
+                <p class="text-body-secondary mb-0">ตรวจ references, workflow projections, operation hashes และหลักฐาน History โดยไม่แก้ไขข้อมูล</p>
+              </div>
+              <button id="admin-run-integrity" type="button" class="btn btn-outline-primary flex-shrink-0"
+                      data-action="run-integrity-audit">
+                <i class="bi bi-shield-check me-2" aria-hidden="true"></i>เริ่มตรวจสอบ
+              </button>
+            </div>
+            <div id="admin-integrity-result" class="mt-4 d-none" aria-live="polite"></div>
+          </div>
+        </section>
+
+        <section aria-labelledby="admin-operations-title">
+          <div class="d-flex align-items-center justify-content-between gap-3 mb-3">
+            <h3 id="admin-operations-title" class="h5 mb-0">Operations</h3>
+            <span class="small text-body-secondary">กู้คืนเฉพาะรายการ STARTED หลังตรวจสอบสถานะปัจจุบัน</span>
+          </div>
+          <form id="form-admin-operation-filter" class="card card-body mb-4" novalidate>
+            <div class="row g-3 align-items-end">
+              <div class="col-12 col-lg-5">
+                <label for="admin-operation-search" class="form-label">ค้นหา Operation</label>
+                <input id="admin-operation-search" name="search" type="search" class="form-control" autocomplete="off">
+              </div>
+              <div class="col-6 col-md-4 col-lg-2">
+                <label for="admin-operation-status" class="form-label">สถานะ</label>
+                <select id="admin-operation-status" name="status" class="form-select">
+                  <option value="">ทุกสถานะ</option>
+                  <option value="STARTED">STARTED</option>
+                  <option value="COMPLETED">COMPLETED</option>
+                  <option value="ABORTED">ABORTED</option>
+                </select>
+              </div>
+              <div class="col-6 col-md-4 col-lg-3">
+                <label for="admin-operation-action" class="form-label">Action</label>
+                <input id="admin-operation-action" name="action" type="text" class="form-control" autocomplete="off">
+              </div>
+              <div class="col-12 col-md-4 col-lg-2 d-grid">
+                <button type="submit" class="btn btn-primary">ค้นหา</button>
+              </div>
+            </div>
+          </form>
+          <div id="admin-operations-loading" class="py-5 text-center" data-state="loading" role="status">
+            <span class="spinner-border spinner-border-sm text-primary me-2" aria-hidden="true"></span>กำลังโหลด Operations
+          </div>
+          <div id="admin-operations-error" class="alert alert-danger d-none" data-state="error" role="alert"></div>
+          <div id="admin-operations-empty" class="card card-body py-5 text-center text-body-secondary d-none"
+               data-state="empty">ไม่พบ Operation ตามตัวกรอง</div>
+          <div id="admin-operations-results" class="card overflow-hidden d-none" data-state="content">
+            <div class="table-responsive">
+              <table class="table table-hover align-middle mb-0">
+                <caption class="visually-hidden">Operations ของระบบ</caption>
+                <thead class="table-light">
+                  <tr>
+                    <th scope="col">Operation</th>
+                    <th scope="col">Action / Entity</th>
+                    <th scope="col">ผู้ดำเนินการ</th>
+                    <th scope="col">เวลาเริ่ม</th>
+                    <th scope="col">สถานะ</th>
+                    <th scope="col" class="text-end">การทำงาน</th>
+                  </tr>
+                </thead>
+                <tbody id="table-body-admin-operations"></tbody>
+              </table>
+            </div>
+          </div>
+          <nav class="mt-4" aria-label="หน้า Operations">
+            <ul id="pagination-admin-operations" class="pagination justify-content-center flex-wrap mb-0"></ul>
+          </nav>
+        </section>
+      </section>
+    </div>
+
+    <div id="modal-admin-borrow-detail" class="modal fade" tabindex="-1"
+         aria-labelledby="admin-borrow-detail-title" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2 id="admin-borrow-detail-title" class="modal-title fs-5">รายละเอียดการยืม</h2>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+          </div>
+          <div id="admin-borrow-detail-content" class="modal-body"></div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">ปิด</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="modal-admin-approve" class="modal fade" tabindex="-1" aria-labelledby="admin-approve-title" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <form id="form-admin-approve" novalidate>
+            <input name="borrow_id" type="hidden">
+            <input name="expected_version" type="hidden">
+            <input name="command_id" type="hidden">
+            <div class="modal-header">
+              <h2 id="admin-approve-title" class="modal-title fs-5">อนุมัติคำขอยืม</h2>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+            </div>
+            <div class="modal-body">
+              <div id="admin-approve-summary"></div>
+              <div class="alert alert-info mt-3 mb-0" role="note">เมื่ออนุมัติแล้ว อุปกรณ์จะอยู่ในสถานะจองและพร้อมสำหรับการส่งมอบ</div>
+              <div class="alert alert-danger d-none mt-3 mb-0" data-form-error role="alert"></div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">กลับ</button>
+              <button type="submit" class="btn btn-success" data-action="submit-admin-approve">ยืนยันอนุมัติ</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div id="modal-admin-reject" class="modal fade" tabindex="-1" aria-labelledby="admin-reject-title" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <form id="form-admin-reject" novalidate>
+            <input name="borrow_id" type="hidden">
+            <input name="expected_version" type="hidden">
+            <input name="command_id" type="hidden">
+            <div class="modal-header">
+              <h2 id="admin-reject-title" class="modal-title fs-5">ไม่อนุมัติคำขอยืม</h2>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+            </div>
+            <div class="modal-body">
+              <div id="admin-reject-summary" class="mb-3"></div>
+              <div class="mb-3">
+                <label for="admin-reject-reason" class="form-label">เหตุผล <span class="text-danger" aria-hidden="true">*</span></label>
+                <textarea id="admin-reject-reason" name="reason" class="form-control" rows="4" maxlength="1000" required></textarea>
+                <div class="invalid-feedback" data-field-error="reason"></div>
+              </div>
+              <div class="alert alert-danger d-none mb-0" data-form-error role="alert"></div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">กลับ</button>
+              <button type="submit" class="btn btn-danger" data-action="submit-admin-reject">ยืนยันไม่อนุมัติ</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div id="modal-admin-checkout" class="modal fade" tabindex="-1" aria-labelledby="admin-checkout-title" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <form id="form-admin-checkout" novalidate>
+            <input name="borrow_id" type="hidden">
+            <input name="expected_version" type="hidden">
+            <input name="command_id" type="hidden">
+            <div class="modal-header">
+              <h2 id="admin-checkout-title" class="modal-title fs-5">ยืนยันการส่งมอบอุปกรณ์</h2>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+            </div>
+            <div class="modal-body">
+              <div id="admin-checkout-summary"></div>
+              <div class="alert alert-warning mt-3 mb-0" role="note">ตรวจสอบผู้รับและอุปกรณ์ประกอบก่อนบันทึกการส่งมอบ</div>
+              <div class="alert alert-danger d-none mt-3 mb-0" data-form-error role="alert"></div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">กลับ</button>
+              <button type="submit" class="btn btn-primary" data-action="submit-admin-checkout">ยืนยันส่งมอบ</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div id="modal-admin-return" class="modal fade" tabindex="-1" aria-labelledby="admin-return-title" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+          <form id="form-admin-return" novalidate>
+            <input name="borrow_id" type="hidden">
+            <input name="expected_version" type="hidden">
+            <input name="command_id" type="hidden">
+            <div class="modal-header">
+              <h2 id="admin-return-title" class="modal-title fs-5">ตรวจรับคืนอุปกรณ์</h2>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+            </div>
+            <div class="modal-body">
+              <div id="admin-return-summary" class="mb-4"></div>
+              <fieldset class="mb-4">
+                <legend class="h6">สภาพอุปกรณ์หลัก</legend>
+                <div class="row g-3">
+                  <div class="col-12 col-md-6">
+                    <label for="admin-return-condition" class="form-label">ผลการตรวจสภาพ <span class="text-danger" aria-hidden="true">*</span></label>
+                    <select id="admin-return-condition" name="condition" class="form-select" required>
+                      <option value="">เลือกผลการตรวจ</option>
+                      <option value="NORMAL">ปกติ</option>
+                      <option value="COSMETIC_DAMAGE">มีรอยภายนอก</option>
+                      <option value="DAMAGED">ชำรุด</option>
+                      <option value="MISSING_ITEMS">อุปกรณ์ประกอบไม่ครบ</option>
+                      <option value="LOST">สูญหาย</option>
+                    </select>
+                    <div class="invalid-feedback" data-field-error="condition"></div>
+                  </div>
+                  <div class="col-12 col-md-6">
+                    <label for="admin-return-disposition" class="form-label">สถานะหลังตรวจรับ <span class="text-danger" aria-hidden="true">*</span></label>
+                    <select id="admin-return-disposition" name="disposition" class="form-select" required>
+                      <option value="">เลือกสถานะปลายทาง</option>
+                      <option value="AVAILABLE">พร้อมใช้งาน</option>
+                      <option value="DAMAGED">ชำรุด</option>
+                      <option value="MAINTENANCE">ส่งซ่อมบำรุง</option>
+                      <option value="LOST">สูญหาย</option>
+                    </select>
+                    <div class="invalid-feedback" data-field-error="disposition"></div>
+                  </div>
+                </div>
+              </fieldset>
+              <fieldset class="mb-4">
+                <legend class="h6">ตรวจนับอุปกรณ์ประกอบ</legend>
+                <p class="small text-body-secondary">บันทึกจำนวนที่ได้รับคืน สภาพ และหมายเหตุให้ครบทุกรายการ</p>
+                <div id="admin-return-item-checklist" class="d-grid gap-3" aria-live="polite"></div>
+                <div class="invalid-feedback d-block" data-field-error="items"></div>
+              </fieldset>
+              <div class="mb-3">
+                <label for="admin-return-note" class="form-label">บันทึกการตรวจรับ <span class="text-body-secondary">(ไม่บังคับ)</span></label>
+                <textarea id="admin-return-note" name="note" class="form-control" rows="3" maxlength="2000"></textarea>
+                <div class="invalid-feedback" data-field-error="note"></div>
+              </div>
+              <div class="alert alert-danger d-none mb-0" data-form-error role="alert"></div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">กลับ</button>
+              <button type="submit" class="btn btn-success" data-action="submit-admin-return">บันทึกตรวจรับคืน</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div id="modal-admin-user" class="modal fade" tabindex="-1" aria-labelledby="admin-user-form-title" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <form id="form-admin-user" novalidate>
+            <input name="user_id" type="hidden">
+            <input name="expected_version" type="hidden">
+            <input name="command_id" type="hidden">
+            <div class="modal-header">
+              <h2 id="admin-user-form-title" class="modal-title fs-5">เพิ่มผู้ใช้</h2>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+            </div>
+            <div class="modal-body">
+              <div class="mb-3">
+                <label for="admin-user-email-input" class="form-label">อีเมล Google Workspace <span class="text-danger" aria-hidden="true">*</span></label>
+                <input id="admin-user-email-input" name="email" type="email" class="form-control" maxlength="254" required autocomplete="off">
+                <div class="invalid-feedback" data-field-error="email"></div>
+              </div>
+              <div class="mb-3">
+                <label for="admin-user-name-input" class="form-label">ชื่อ–นามสกุล <span class="text-danger" aria-hidden="true">*</span></label>
+                <input id="admin-user-name-input" name="name" type="text" class="form-control" maxlength="200" required autocomplete="off">
+                <div class="invalid-feedback" data-field-error="name"></div>
+              </div>
+              <div class="mb-3">
+                <label for="admin-user-department-input" class="form-label">หน่วยงาน</label>
+                <input id="admin-user-department-input" name="department" type="text" class="form-control" maxlength="150" autocomplete="off">
+                <div class="invalid-feedback" data-field-error="department"></div>
+              </div>
+              <div class="row g-3">
+                <div class="col-6">
+                  <label for="admin-user-role-input" class="form-label">สิทธิ์ <span class="text-danger" aria-hidden="true">*</span></label>
+                  <select id="admin-user-role-input" name="role" class="form-select" required>
+                    <option value="USER">ผู้ใช้</option>
+                    <option value="ADMIN">ผู้ดูแลระบบ</option>
+                  </select>
+                </div>
+                <div class="col-6">
+                  <label for="admin-user-status-input" class="form-label">สถานะ <span class="text-danger" aria-hidden="true">*</span></label>
+                  <select id="admin-user-status-input" name="status" class="form-select" required>
+                    <option value="ACTIVE">ใช้งาน</option>
+                    <option value="INACTIVE">ปิดใช้งาน</option>
+                  </select>
+                </div>
+              </div>
+              <div class="alert alert-danger d-none mt-3 mb-0" data-form-error role="alert"></div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+              <button type="submit" class="btn btn-primary" data-action="submit-admin-user">บันทึกผู้ใช้</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div id="modal-admin-category" class="modal fade" tabindex="-1" aria-labelledby="admin-category-form-title" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <form id="form-admin-category" novalidate>
+            <input name="category_id" type="hidden">
+            <input name="expected_version" type="hidden">
+            <input name="command_id" type="hidden">
+            <div class="modal-header">
+              <h2 id="admin-category-form-title" class="modal-title fs-5">เพิ่มหมวดหมู่</h2>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+            </div>
+            <div class="modal-body">
+              <div class="mb-3">
+                <label for="admin-category-name-input" class="form-label">ชื่อหมวดหมู่ <span class="text-danger" aria-hidden="true">*</span></label>
+                <input id="admin-category-name-input" name="category_name" type="text" class="form-control" maxlength="150" required autocomplete="off">
+                <div class="invalid-feedback" data-field-error="category_name"></div>
+              </div>
+              <div class="row g-3">
+                <div class="col-12 col-sm-5">
+                  <label for="admin-category-prefix-input" class="form-label">Prefix <span class="text-danger" aria-hidden="true">*</span></label>
+                  <input id="admin-category-prefix-input" name="prefix" type="text" class="form-control text-uppercase"
+                         maxlength="20" pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,19}" required autocomplete="off"
+                         aria-describedby="admin-category-prefix-help">
+                  <div id="admin-category-prefix-help" class="form-text">A–Z, 0–9, _ หรือ -</div>
+                  <div class="invalid-feedback" data-field-error="prefix"></div>
+                </div>
+                <div class="col-6 col-sm-3">
+                  <label for="admin-category-order-input" class="form-label">ลำดับ</label>
+                  <input id="admin-category-order-input" name="sort_order" type="number" class="form-control" min="0" max="999999" step="1">
+                  <div class="invalid-feedback" data-field-error="sort_order"></div>
+                </div>
+                <div class="col-6 col-sm-4">
+                  <label for="admin-category-status-input" class="form-label">สถานะ <span class="text-danger" aria-hidden="true">*</span></label>
+                  <select id="admin-category-status-input" name="status" class="form-select" required>
+                    <option value="ACTIVE">ใช้งาน</option>
+                    <option value="INACTIVE">ปิดใช้งาน</option>
+                  </select>
+                </div>
+              </div>
+              <div class="alert alert-danger d-none mt-3 mb-0" data-form-error role="alert"></div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+              <button type="submit" class="btn btn-primary" data-action="submit-admin-category">บันทึกหมวดหมู่</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div id="modal-admin-operation" class="modal fade" tabindex="-1" aria-labelledby="admin-operation-detail-title" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2 id="admin-operation-detail-title" class="modal-title fs-5">รายละเอียด Operation</h2>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+          </div>
+          <div class="modal-body">
+            <div id="admin-operation-detail-loading" class="py-5 text-center" data-state="loading" role="status">
+              <span class="spinner-border spinner-border-sm text-primary me-2" aria-hidden="true"></span>กำลังโหลดรายละเอียด
+            </div>
+            <div id="admin-operation-detail-error" class="alert alert-danger d-none" data-state="error" role="alert"></div>
+            <div id="admin-operation-detail-content" class="d-none" data-state="content">
+              <dl id="admin-operation-detail-summary" class="row"></dl>
+              <div class="accordion" id="admin-operation-evidence">
+                <div class="accordion-item">
+                  <h3 class="accordion-header">
+                    <button class="accordion-button" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#admin-operation-payload" aria-expanded="true"
+                            aria-controls="admin-operation-payload">Payload</button>
+                  </h3>
+                  <div id="admin-operation-payload" class="accordion-collapse collapse show" data-bs-parent="#admin-operation-evidence">
+                    <div class="accordion-body"><pre class="small mb-0 text-wrap" data-operation-json="payload"></pre></div>
+                  </div>
+                </div>
+                <div class="accordion-item">
+                  <h3 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#admin-operation-before" aria-expanded="false"
+                            aria-controls="admin-operation-before">ข้อมูลก่อนทำรายการ</button>
+                  </h3>
+                  <div id="admin-operation-before" class="accordion-collapse collapse" data-bs-parent="#admin-operation-evidence">
+                    <div class="accordion-body"><pre class="small mb-0 text-wrap" data-operation-json="before"></pre></div>
+                  </div>
+                </div>
+                <div class="accordion-item">
+                  <h3 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#admin-operation-result-data" aria-expanded="false"
+                            aria-controls="admin-operation-result-data">ผลลัพธ์</button>
+                  </h3>
+                  <div id="admin-operation-result-data" class="accordion-collapse collapse" data-bs-parent="#admin-operation-evidence">
+                    <div class="accordion-body"><pre class="small mb-0 text-wrap" data-operation-json="result"></pre></div>
+                  </div>
+                </div>
+              </div>
+              <div id="admin-operation-action-error" class="alert alert-danger d-none mt-3 mb-0" role="alert"></div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">ปิด</button>
+            <button type="button" class="btn btn-outline-danger d-none" data-action="open-abort-operation"
+                    data-operation-id="">ยกเลิก Operation</button>
+            <button type="button" class="btn btn-primary d-none" data-action="reconcile-operation"
+                    data-operation-id="">กู้คืน Operation</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="modal-admin-abort-operation" class="modal fade" tabindex="-1"
+         aria-labelledby="admin-abort-operation-title" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <form id="form-admin-abort-operation" novalidate>
+            <input name="operation_id" type="hidden">
+            <div class="modal-header">
+              <h2 id="admin-abort-operation-title" class="modal-title fs-5">ยกเลิก Operation อัปโหลดภาพ</h2>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+            </div>
+            <div class="modal-body">
+              <div class="alert alert-warning" role="note">ใช้ได้เฉพาะ Operation อัปโหลดภาพที่ยังไม่เปลี่ยนข้อมูลอุปกรณ์ ระบบจะพยายามย้ายไฟล์ที่ไม่ถูกผูกไปถังขยะ</div>
+              <label for="admin-abort-reason" class="form-label">เหตุผล <span class="text-danger" aria-hidden="true">*</span></label>
+              <textarea id="admin-abort-reason" name="reason" class="form-control" rows="3" maxlength="500" required></textarea>
+              <div class="invalid-feedback" data-field-error="reason"></div>
+              <div class="alert alert-danger d-none mt-3 mb-0" data-form-error role="alert"></div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">กลับ</button>
+              <button type="submit" class="btn btn-danger" data-action="submit-abort-operation">ยืนยันยกเลิก Operation</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+</template>

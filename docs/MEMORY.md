@@ -1,6 +1,6 @@
 # Project Memory
 
-Last updated: 2026-08-21
+Last updated: 2026-08-27
 
 ## Current state
 
@@ -9,7 +9,8 @@ Last updated: 2026-08-21
 - Completed: Phase 1 — architecture, schema, workflow, project rules, migration direction
 - Completed: Phase 2 — manifest/config, schema setup, immutable migration ledger, sequences, repositories, utilities, validation, cache helpers
 - Completed: Phase 3 — Workspace authentication, guarded RPCs, domain services, durable operation recovery, Drive images, integrity audit, and schema v3 migrations
-- Next: Phase 4 — responsive Thai SPA shell, navigation, views, forms, state handling, QR display, and camera scanner
+- Completed: Phase 4 — responsive Thai SPA shell, navigation, dashboards, equipment/borrowing/admin screens, forms, state handling, and client RPC integration
+- Next: Phase 5 — QR generation, asset-link display/download, deep-link handling, and camera scanner
 
 ## Frozen contracts
 
@@ -48,3 +49,13 @@ Last updated: 2026-08-21
 - Verified source contains no `Session.getEffectiveUser()` or unsupported private Drive-image sharing path. Setup validates the caller inside the Script Lock; first bootstrap requires a configured same-domain admin, while every later run requires an active Users-row admin.
 - Read-only recovery/security review covered exact source/target replay, role-specific DTO redaction, active-workflow holds, return checklist evidence, result hashes, safe image aborts, unique reservations, cache epochs, and batch row updates. It also reproduced and closed partial equipment-edit recovery, setup authorization races, stale auto-provision authorization, uncertain Drive-resource cleanup, and invalid `ABORTED` evidence cases.
 - Live Workspace identity, Apps Script authorization, Drive sharing/resource-key behavior, browser RPC, and deployed web-app acceptance remain for Phase 7 because they require deployer-owned resources.
+
+## Phase 4 verification
+
+- All 23 Apps Script files pass individual and combined V8-compatible syntax compilation; all six inline client controllers compile, `appsscript.json` parses, and `git diff --check` is clean.
+- Static integration checks match all 32 guarded public RPCs to Promise client endpoints, all nine allowlisted routes to registered renderers, all six mounted view templates to source templates, and every server include to an allowlisted HTML partial.
+- Responsive Thai UI covers the desktop sidebar, mobile bottom navigation with a central Scan action, access/loading/offline/toast/confirm states, dashboard, equipment card/table catalog, detail, borrow request, My Borrow/history, account, and all six admin tabs.
+- Admin workflows use current row versions and stable browser command IDs for approve, reject, checkout, return inspection, equipment/user/category mutations, and operation abort. Return inspection sends every immutable BorrowItems snapshot and enforces required-item plus condition/disposition rules before the server revalidates them.
+- Read-only frontend review closed deep-link filter gaps, stale category options, an invalid catalog pagination structure, exact Asset/Borrow ID validation, dashboard admin routing/latest-borrow selection, route-selector hardening, and the signed-in admin email orphaning case. The email rule is also enforced in `UserService.gs`, not only by a read-only field.
+- HTML structure checks found no duplicate static IDs, unbalanced tags/CSS braces, mojibake, inline event-handler attributes, `javascript:` URLs, or unfinished runtime markers.
+- Live responsive layout, `google.script.run`, Workspace session behavior, and browser accessibility acceptance remain for Phase 7 because the deployment configuration and accounts are deployer-owned.

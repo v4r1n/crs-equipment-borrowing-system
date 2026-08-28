@@ -1,0 +1,644 @@
+<script>
+(function (global) {
+  'use strict';
+
+  const CRS = global.CRS = global.CRS || {};
+  const routeTitles = {
+    dashboard: 'หน้าหลัก',
+    equipment: 'อุปกรณ์',
+    'equipment-detail': 'รายละเอียดอุปกรณ์',
+    borrow: 'ขอยืมอุปกรณ์',
+    'my-borrow': 'การยืมของฉัน',
+    history: 'ประวัติของฉัน',
+    admin: 'จัดการระบบ',
+    scan: 'สแกน QR',
+    account: 'บัญชีของฉัน'
+  };
+  const statusMeta = {
+    AVAILABLE: ['พร้อมยืม', 'success'],
+    PENDING: ['รออนุมัติ', 'warning'],
+    RESERVED: ['ถูกจอง', 'info'],
+    BORROWED: ['กำลังยืม', 'primary'],
+    RETURNING: ['รอตรวจรับคืน', 'warning'],
+    MAINTENANCE: ['ส่งซ่อม', 'secondary'],
+    DAMAGED: ['ชำรุด', 'danger'],
+    LOST: ['สูญหาย', 'dark'],
+    RETIRED: ['ยกเลิกใช้งาน', 'secondary'],
+    PENDING_APPROVAL: ['รออนุมัติ', 'warning'],
+    APPROVED: ['อนุมัติแล้ว', 'info'],
+    REJECTED: ['ถูกปฏิเสธ', 'danger'],
+    CHECKED_OUT: ['กำลังยืม', 'primary'],
+    RETURN_REQUESTED: ['รอตรวจรับคืน', 'warning'],
+    RETURNED: ['คืนแล้ว', 'success'],
+    CANCELLED: ['ยกเลิก', 'secondary'],
+    OVERDUE: ['เกินกำหนด', 'danger'],
+    NORMAL: ['ปกติ', 'success'],
+    COSMETIC_DAMAGE: ['มีรอย/เสียหายเล็กน้อย', 'warning'],
+    MISSING_ITEMS: ['อุปกรณ์ไม่ครบ', 'danger'],
+    ACTIVE: ['ใช้งาน', 'success'],
+    INACTIVE: ['ปิดใช้งาน', 'secondary'],
+    USER: ['ผู้ใช้งาน', 'primary'],
+    ADMIN: ['ผู้ดูแลระบบ', 'dark'],
+    STARTED: ['ต้องกู้คืน', 'warning'],
+    COMPLETED: ['เสร็จสมบูรณ์', 'success'],
+    ABORTED: ['ยกเลิกอย่างปลอดภัย', 'secondary']
+  };
+  const actionLabels = {
+    CREATE_ASSET: 'เพิ่มอุปกรณ์',
+    EDIT_ASSET: 'แก้ไขอุปกรณ์',
+    CHANGE_STATUS: 'เปลี่ยนสถานะ',
+    UPLOAD_ASSET_IMAGE: 'อัปโหลดรูปอุปกรณ์',
+    BORROW_REQUEST: 'ส่งคำขอยืม',
+    APPROVE: 'อนุมัติการยืม',
+    REJECT: 'ไม่อนุมัติการยืม',
+    CHECKOUT: 'จ่ายอุปกรณ์',
+    REQUEST_RETURN: 'แจ้งคืนอุปกรณ์',
+    RETURN: 'ตรวจรับคืน',
+    CREATE_USER: 'เพิ่มผู้ใช้',
+    EDIT_USER: 'แก้ไขผู้ใช้',
+    AUTO_PROVISION_USER: 'สร้างผู้ใช้อัตโนมัติ',
+    CREATE_CATEGORY: 'เพิ่มหมวดหมู่',
+    EDIT_CATEGORY: 'แก้ไขหมวดหมู่'
+  };
+
+  CRS.state = {
+    bootstrap: null,
+    route: '',
+    params: {},
+    viewToken: 0,
+    loadingCount: 0
+  };
+  CRS.routes = Object.create(null);
+
+  CRS.$ = function (selector, root) {
+    return (root || document).querySelector(selector);
+  };
+
+  CRS.$$ = function (selector, root) {
+    return Array.prototype.slice.call((root || document).querySelectorAll(selector));
+  };
+
+  CRS.escapeHtml = function (value) {
+    return String(value === undefined || value === null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  };
+
+  CRS.safeImageUrl = function (value) {
+    const url = String(value || '').trim();
+    return /^https:\/\/drive\.google\.com\/thumbnail\?/i.test(url) ? url : '';
+  };
+
+  CRS.setText = function (target, value) {
+    const element = typeof target === 'string' ? CRS.$(target) : target;
+    if (element) element.textContent = value === undefined || value === null ? '' : String(value);
+  };
+
+  CRS.formatDate = function (value) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ''));
+    if (!match) return value ? String(value) : '—';
+    const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+    return new Intl.DateTimeFormat('th-TH', {
+      day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC'
+    }).format(date);
+  };
+
+  CRS.formatDateTime = function (value) {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return new Intl.DateTimeFormat('th-TH', {
+      day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+      timeZone: (CRS.state.bootstrap && CRS.state.bootstrap.app.timezone) || 'Asia/Bangkok'
+    }).format(date);
+  };
+
+  CRS.formatMoney = function (value) {
+    if (value === '' || value === null || value === undefined) return '—';
+    const number = Number(value);
+    return Number.isFinite(number)
+      ? new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB' }).format(number)
+      : '—';
+  };
+
+  CRS.statusLabel = function (status) {
+    const key = String(status || '').toUpperCase();
+    return statusMeta[key] ? statusMeta[key][0] : (key || 'ไม่ระบุ');
+  };
+
+  CRS.statusBadge = function (status) {
+    const key = String(status || '').toUpperCase();
+    const meta = statusMeta[key] || [key || 'ไม่ระบุ', 'secondary'];
+    return '<span class="badge rounded-pill text-bg-' + meta[1] + '">' +
+      CRS.escapeHtml(meta[0]) + '</span>';
+  };
+
+  CRS.actionLabel = function (action) {
+    const key = String(action || '').toUpperCase();
+    return actionLabels[key] || key || 'ไม่ระบุ';
+  };
+
+  CRS.commandId = function () {
+    if (global.crypto && typeof global.crypto.randomUUID === 'function') {
+      return global.crypto.randomUUID();
+    }
+    const bytes = new Uint8Array(16);
+    if (global.crypto && typeof global.crypto.getRandomValues === 'function') {
+      global.crypto.getRandomValues(bytes);
+      return Array.prototype.map.call(bytes, function (byte) {
+        return byte.toString(16).padStart(2, '0');
+      }).join('');
+    }
+    return 'cmd-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 14);
+  };
+
+  function canonicalize(value) {
+    if (Array.isArray(value)) return value.map(canonicalize);
+    if (value && typeof value === 'object') {
+      const output = {};
+      Object.keys(value).sort().forEach(function (key) { output[key] = canonicalize(value[key]); });
+      return output;
+    }
+    return value === undefined ? null : value;
+  }
+
+  function fingerprint(value) {
+    const text = JSON.stringify(canonicalize(value));
+    let hash = 2166136261;
+    for (let index = 0; index < text.length; index += 1) {
+      hash ^= text.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(36) + ':' + text.length;
+  }
+
+  const commandStoreKey = 'crs.pendingCommands.v1';
+  const definitivePrestartErrors = [
+    'VALIDATION_FAILED', 'UNAUTHENTICATED', 'FORBIDDEN', 'USER_DISABLED', 'CONFIG_ERROR',
+    'NOT_FOUND', 'DUPLICATE_SERIAL', 'DUPLICATE_EMAIL', 'DUPLICATE_CATEGORY',
+    'LAST_ACTIVE_ADMIN', 'RESERVATION_CONFLICT'
+  ];
+
+  function readCommands() {
+    try { return JSON.parse(sessionStorage.getItem(commandStoreKey) || '{}'); }
+    catch (error) { return {}; }
+  }
+
+  function writeCommands(commands) {
+    try { sessionStorage.setItem(commandStoreKey, JSON.stringify(commands)); }
+    catch (error) { console.warn('Pending command storage unavailable', error); }
+  }
+
+  CRS.runMutation = async function (key, method, payload) {
+    const commands = readCommands();
+    const payloadFingerprint = fingerprint(payload || {});
+    let entry = commands[key];
+    if (entry && entry.fingerprint !== payloadFingerprint) {
+      if (entry.locked) {
+        throw new CRS.ClientApiError({
+          code: 'PENDING_COMMAND_CHANGED',
+          message: 'ข้อมูลของรายการที่ต้องกู้คืนเปลี่ยนไป กรุณาโหลดหน้านี้ใหม่แล้วทำรายการเดิมให้เสร็จ',
+          retryable: false
+        });
+      }
+      entry = null;
+    }
+    if (!entry) {
+      entry = { commandId: CRS.commandId(), fingerprint: payloadFingerprint, locked: false };
+      commands[key] = entry;
+      writeCommands(commands);
+    }
+    try {
+      const result = await CRS.api[method](Object.assign({}, payload, {
+        command_id: entry.commandId
+      }));
+      const afterSuccess = readCommands();
+      delete afterSuccess[key];
+      writeCommands(afterSuccess);
+      return result;
+    } catch (error) {
+      const afterError = readCommands();
+      if (definitivePrestartErrors.indexOf(error.code) !== -1) {
+        delete afterError[key];
+      } else if (afterError[key]) {
+        afterError[key].locked = true;
+      }
+      writeCommands(afterError);
+      throw error;
+    }
+  };
+
+  CRS.clearPendingCommand = function (key) {
+    const commands = readCommands();
+    delete commands[key];
+    writeCommands(commands);
+  };
+
+  CRS.setLoading = function (active, message) {
+    CRS.state.loadingCount = Math.max(0, CRS.state.loadingCount + (active ? 1 : -1));
+    const overlay = CRS.$('#global-loading');
+    if (!overlay) return;
+    CRS.setText(CRS.$('[data-loading-message]', overlay), message || 'กำลังประมวลผล…');
+    overlay.hidden = CRS.state.loadingCount === 0;
+    overlay.setAttribute('aria-hidden', CRS.state.loadingCount === 0 ? 'true' : 'false');
+  };
+
+  CRS.withLoading = async function (task, message) {
+    CRS.setLoading(true, message);
+    try { return await task(); }
+    finally { CRS.setLoading(false); }
+  };
+
+  CRS.toast = function (message, tone) {
+    const container = CRS.$('#toast-container');
+    if (!container) return;
+    const toast = document.createElement('div');
+    const color = ['success', 'danger', 'warning', 'info'].indexOf(tone) !== -1 ? tone : 'info';
+    toast.className = 'toast align-items-center border-0 text-bg-' + color;
+    toast.setAttribute('role', 'status');
+    toast.setAttribute('aria-live', 'polite');
+    toast.setAttribute('aria-atomic', 'true');
+    const row = document.createElement('div');
+    row.className = 'd-flex';
+    const body = document.createElement('div');
+    body.className = 'toast-body';
+    body.textContent = String(message || '');
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'btn-close btn-close-white me-2 m-auto';
+    close.setAttribute('data-bs-dismiss', 'toast');
+    close.setAttribute('aria-label', 'ปิด');
+    row.append(body, close);
+    toast.appendChild(row);
+    container.appendChild(toast);
+    toast.addEventListener('hidden.bs.toast', function () { toast.remove(); });
+    bootstrap.Toast.getOrCreateInstance(toast, { delay: color === 'danger' ? 7000 : 4000 }).show();
+  };
+
+  CRS.clearFieldErrors = function (form) {
+    if (!form) return;
+    CRS.$$('.is-invalid', form).forEach(function (field) { field.classList.remove('is-invalid'); });
+    CRS.$$('.invalid-feedback[data-server-error]', form).forEach(function (feedback) {
+      feedback.remove();
+    });
+  };
+
+  CRS.applyFieldErrors = function (form, fieldErrors) {
+    if (!form || !fieldErrors) return;
+    Object.keys(fieldErrors).forEach(function (name) {
+      let field = form.elements.namedItem(name);
+      if (!field && name.indexOf('.') !== -1) {
+        field = form.elements.namedItem(name.replace(/\.(\d+)\./g, '[$1].'));
+      }
+      if (!field || field instanceof RadioNodeList) return;
+      field.classList.add('is-invalid');
+      const feedback = document.createElement('div');
+      feedback.className = 'invalid-feedback';
+      feedback.dataset.serverError = 'true';
+      feedback.textContent = fieldErrors[name];
+      field.insertAdjacentElement('afterend', feedback);
+    });
+  };
+
+  CRS.handleError = function (error, options) {
+    const settings = options || {};
+    console.error(error);
+    if (settings.form) {
+      CRS.clearFieldErrors(settings.form);
+      CRS.applyFieldErrors(settings.form, error && error.fieldErrors);
+    }
+    const suffix = error && error.requestId ? ' (รหัสอ้างอิง ' + error.requestId + ')' : '';
+    CRS.toast((error && error.message ? error.message : 'เกิดข้อผิดพลาด กรุณาลองใหม่') + suffix, 'danger');
+  };
+
+  CRS.confirm = function (options) {
+    const settings = typeof options === 'string' ? { message: options } : (options || {});
+    const modalElement = CRS.$('#confirm-modal');
+    if (!modalElement) return Promise.resolve(global.confirm(settings.message || 'ยืนยันรายการนี้?'));
+    CRS.setText(CRS.$('[data-confirm-title]', modalElement), settings.title || 'ยืนยันรายการ');
+    CRS.setText(CRS.$('[data-confirm-message]', modalElement), settings.message || 'ยืนยันรายการนี้?');
+    const confirmButton = CRS.$('[data-confirm-accept]', modalElement);
+    confirmButton.className = 'btn btn-' + (settings.tone || 'primary');
+    confirmButton.textContent = settings.confirmText || 'ยืนยัน';
+    const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+    return new Promise(function (resolve) {
+      let accepted = false;
+      function accept() {
+        accepted = true;
+        modal.hide();
+      }
+      function finish() {
+        confirmButton.removeEventListener('click', accept);
+        modalElement.removeEventListener('hidden.bs.modal', finish);
+        resolve(accepted);
+      }
+      confirmButton.addEventListener('click', accept);
+      modalElement.addEventListener('hidden.bs.modal', finish);
+      modal.show();
+    });
+  };
+
+  CRS.openModal = function (elementOrSelector) {
+    const element = typeof elementOrSelector === 'string' ? CRS.$(elementOrSelector) : elementOrSelector;
+    if (!element) return null;
+    const modal = bootstrap.Modal.getOrCreateInstance(element);
+    modal.show();
+    return modal;
+  };
+
+  CRS.mount = function (templateId) {
+    const root = CRS.$('#view-root');
+    const template = document.getElementById(templateId);
+    if (!root || !template) throw new Error('ไม่พบโครงหน้าจอ ' + templateId);
+    root.replaceChildren(template.content.cloneNode(true));
+    const isAdmin = Boolean(CRS.state.bootstrap && CRS.state.bootstrap.session.isAdmin);
+    CRS.$$('[data-admin-only]', root).forEach(function (node) { node.hidden = !isAdmin; });
+    root.focus({ preventScroll: true });
+    return root.firstElementChild || root;
+  };
+
+  CRS.emptyState = function (title, message, icon) {
+    return '<div class="empty-state text-center py-5">' +
+      '<i class="bi ' + CRS.escapeHtml(icon || 'bi-inbox') + ' fs-1 text-secondary" aria-hidden="true"></i>' +
+      '<h3 class="h6 mt-3 mb-1">' + CRS.escapeHtml(title || 'ไม่พบข้อมูล') + '</h3>' +
+      '<p class="text-secondary mb-0">' + CRS.escapeHtml(message || 'ลองเปลี่ยนคำค้นหาหรือตัวกรอง') + '</p>' +
+      '</div>';
+  };
+
+  CRS.pagination = function (pageInfo, action) {
+    const current = Number(pageInfo.page || 1);
+    const totalPages = Number(pageInfo.totalPages || 1);
+    const dataAction = CRS.escapeHtml(action || 'page');
+    const previousDisabled = current <= 1 ? ' disabled aria-disabled="true"' : '';
+    const nextDisabled = current >= totalPages ? ' disabled aria-disabled="true"' : '';
+    return '<nav aria-label="เปลี่ยนหน้า"><div class="d-flex align-items-center justify-content-between gap-3">' +
+      '<small class="text-secondary">หน้า ' + current + ' จาก ' + totalPages +
+      ' · ' + Number(pageInfo.total || 0).toLocaleString('th-TH') + ' รายการ</small>' +
+      '<div class="btn-group btn-group-sm">' +
+      '<button type="button" class="btn btn-outline-secondary" data-action="' + dataAction +
+      '" data-page="' + (current - 1) + '"' + previousDisabled + '>ก่อนหน้า</button>' +
+      '<button type="button" class="btn btn-outline-secondary" data-action="' + dataAction +
+      '" data-page="' + (current + 1) + '"' + nextDisabled + '>ถัดไป</button>' +
+      '</div></div></nav>';
+  };
+
+  CRS.paginationItems = function (pageInfo, action) {
+    const current = Number(pageInfo.page || 1);
+    const totalPages = Number(pageInfo.totalPages || 1);
+    const dataAction = CRS.escapeHtml(action || 'page');
+    const item = function (label, page, disabled, active) {
+      return '<li class="page-item' + (disabled ? ' disabled' : '') + (active ? ' active' : '') + '">' +
+        '<button type="button" class="page-link" data-action="' + dataAction + '" data-page="' + page + '"' +
+        (disabled ? ' disabled aria-disabled="true"' : '') + (active ? ' aria-current="page"' : '') + '>' +
+        CRS.escapeHtml(label) + '</button></li>';
+    };
+    let html = item('ก่อนหน้า', Math.max(1, current - 1), current <= 1, false);
+    const start = Math.max(1, Math.min(current - 2, totalPages - 4));
+    const end = Math.min(totalPages, start + 4);
+    for (let page = start; page <= end; page += 1) {
+      html += item(String(page), page, false, page === current);
+    }
+    html += item('ถัดไป', Math.min(totalPages, current + 1), current >= totalPages, false);
+    return html;
+  };
+
+  CRS.registerRoute = function (name, renderer) {
+    CRS.routes[name] = renderer;
+  };
+
+  CRS.isAdmin = function () {
+    return Boolean(CRS.state.bootstrap && CRS.state.bootstrap.session.isAdmin);
+  };
+
+  function normalizeRoute(route, params) {
+    let name = String(route || '').replace(/^#/, '').trim().toLowerCase();
+    const normalizedParams = Object.assign({}, params || {});
+    if (!name && normalizedParams.id) name = 'equipment-detail';
+    if (!name) name = 'dashboard';
+    if (name === 'equipment-detail' && !normalizedParams.id && normalizedParams.asset_id) {
+      normalizedParams.id = normalizedParams.asset_id;
+    }
+    return { name: name, params: normalizedParams };
+  }
+
+  CRS.navigate = function (route, params, replace) {
+    const target = normalizeRoute(route, params);
+    const historyParams = Object.assign({}, target.params, { view: target.name });
+    if (global.google && google.script && google.script.history) {
+      const method = replace ? 'replace' : 'push';
+      google.script.history[method]({ route: target.name }, historyParams, target.name);
+      CRS.renderRoute(target.name, target.params);
+      return;
+    }
+    const query = new URLSearchParams(historyParams).toString();
+    global.location.hash = target.name + (query ? '?' + query : '');
+  };
+
+  function applyActiveNavigation(route) {
+    const primary = ['equipment-detail', 'borrow'].indexOf(route) !== -1
+      ? 'equipment'
+      : (route === 'history' ? 'history' : route);
+    CRS.$$('[data-route]').forEach(function (link) {
+      const active = link.dataset.route === primary;
+      link.classList.toggle('active', active);
+      if (active) link.setAttribute('aria-current', 'page');
+      else link.removeAttribute('aria-current');
+    });
+    CRS.setText('#page-title', routeTitles[route] || 'ระบบยืม–คืนอุปกรณ์');
+    document.title = (routeTitles[route] || 'ระบบยืม–คืนอุปกรณ์') + ' · ' +
+      ((CRS.state.bootstrap && CRS.state.bootstrap.app.name) || 'CRS');
+  }
+
+  CRS.renderRoute = async function (route, params) {
+    const target = normalizeRoute(route, params);
+    if (target.name === 'admin' && !(CRS.state.bootstrap && CRS.state.bootstrap.session.isAdmin)) {
+      CRS.toast('เฉพาะผู้ดูแลระบบเท่านั้นที่เปิดหน้านี้ได้', 'danger');
+      CRS.navigate('dashboard', {}, true);
+      return;
+    }
+    const renderer = CRS.routes[target.name];
+    if (!renderer) {
+      CRS.navigate('dashboard', {}, true);
+      return;
+    }
+    CRS.state.route = target.name;
+    CRS.state.params = target.params;
+    const token = ++CRS.state.viewToken;
+    applyActiveNavigation(target.name);
+    const root = CRS.$('#view-root');
+    if (root) {
+      root.setAttribute('aria-busy', 'true');
+      root.innerHTML = '<div class="view-loading py-5 text-center" role="status">' +
+        '<div class="spinner-border text-primary" aria-hidden="true"></div>' +
+        '<p class="text-secondary mt-3">กำลังโหลดข้อมูล…</p></div>';
+    }
+    try {
+      await renderer(target.params, token);
+    } catch (error) {
+      if (token !== CRS.state.viewToken) return;
+      if (root) root.innerHTML = CRS.emptyState('โหลดข้อมูลไม่สำเร็จ', error.message, 'bi-exclamation-circle');
+      CRS.handleError(error);
+    } finally {
+      if (token === CRS.state.viewToken && root) root.setAttribute('aria-busy', 'false');
+    }
+  };
+
+  function renderAccount() {
+    const session = CRS.state.bootstrap.session;
+    const root = CRS.$('#view-root');
+    root.innerHTML = '<section class="container-fluid px-0" aria-labelledby="account-heading">' +
+      '<div class="card border-0 shadow-sm"><div class="card-body p-4 p-lg-5">' +
+      '<div class="d-flex align-items-center gap-3 mb-4"><span class="avatar avatar-lg" aria-hidden="true">' +
+      CRS.escapeHtml((session.name || session.email || '?').slice(0, 1).toUpperCase()) + '</span>' +
+      '<div><h1 id="account-heading" class="h4 mb-1">' + CRS.escapeHtml(session.name || 'ผู้ใช้งาน') +
+      '</h1><div class="text-secondary">' + CRS.escapeHtml(session.email) + '</div></div></div>' +
+      '<dl class="row mb-0"><dt class="col-sm-4 text-secondary">รหัสผู้ใช้</dt><dd class="col-sm-8">' +
+      CRS.escapeHtml(session.user_id) + '</dd><dt class="col-sm-4 text-secondary">หน่วยงาน</dt><dd class="col-sm-8">' +
+      CRS.escapeHtml(session.department || 'ไม่ระบุ') + '</dd><dt class="col-sm-4 text-secondary">สิทธิ์</dt><dd class="col-sm-8">' +
+      CRS.statusBadge(session.role) + '</dd></dl><hr><p class="small text-secondary mb-0">' +
+      'ระบบใช้บัญชี Google Workspace ที่กำลังลงชื่อเข้าใช้ หากต้องการเปลี่ยนบัญชีให้เปิดลิงก์ Web app ด้วยบัญชีองค์กรที่ต้องการ' +
+      '</p></div></div></section>';
+  }
+
+  function renderScanEntry() {
+    const root = CRS.$('#view-root');
+    root.innerHTML = '<section class="container-fluid px-0" aria-labelledby="scan-entry-heading">' +
+      '<div class="card border-0 shadow-sm mx-auto" style="max-width:36rem"><div class="card-body p-4 p-lg-5">' +
+      '<div class="text-center mb-4"><i class="bi bi-upc-scan display-4 text-primary" aria-hidden="true"></i>' +
+      '<h1 id="scan-entry-heading" class="h4 mt-3">เปิดอุปกรณ์ด้วย Asset ID</h1>' +
+      '<p class="text-secondary">กรอกรหัสจากสติกเกอร์เพื่อเปิดรายละเอียดอุปกรณ์</p></div>' +
+      '<form id="asset-id-entry-form" novalidate><label class="form-label" for="asset-id-entry">Asset ID</label>' +
+      '<div class="input-group"><input id="asset-id-entry" name="asset_id" class="form-control text-uppercase" ' +
+      'pattern="AST-[0-9]{6}" placeholder="AST-000001" required autocomplete="off">' +
+      '<button class="btn btn-primary" type="submit">เปิดรายละเอียด</button></div>' +
+      '<div class="form-text">รองรับรหัสรูปแบบ AST-000001</div></form></div></div></section>';
+    const form = CRS.$('#asset-id-entry-form');
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      const id = String(new FormData(form).get('asset_id') || '').trim().toUpperCase();
+      if (!/^AST-\d{6}$/.test(id)) {
+        CRS.toast('กรุณาระบุ Asset ID ให้ถูกต้อง', 'warning');
+        return;
+      }
+      CRS.navigate('equipment-detail', { id: id });
+    });
+  }
+
+  CRS.registerRoute('account', renderAccount);
+  CRS.registerRoute('scan', renderScanEntry);
+
+  function updateNetworkStatus() {
+    const indicator = CRS.$('#network-status');
+    if (!indicator) return;
+    const offline = global.navigator && global.navigator.onLine === false;
+    indicator.hidden = !offline;
+  }
+
+  function applyBootstrap(data) {
+    CRS.state.bootstrap = data;
+    CRS.$$('[data-app-name]').forEach(function (node) { node.textContent = data.app.name; });
+    CRS.$$('[data-app-version]').forEach(function (node) { node.textContent = data.app.version; });
+    CRS.$$('[data-session-name]').forEach(function (node) {
+      node.textContent = data.session.name || data.session.email;
+    });
+    CRS.$$('[data-session-email]').forEach(function (node) { node.textContent = data.session.email; });
+    CRS.$$('[data-session-department]').forEach(function (node) {
+      node.textContent = data.session.department || 'ไม่ระบุหน่วยงาน';
+    });
+    CRS.$$('[data-session-role]').forEach(function (node) {
+      node.textContent = CRS.statusLabel(data.session.role);
+    });
+    CRS.$$('[data-session-initial]').forEach(function (node) {
+      node.textContent = (data.session.name || data.session.email || '?').slice(0, 1).toUpperCase();
+    });
+    CRS.$$('[data-admin-only]').forEach(function (node) { node.hidden = !data.session.isAdmin; });
+    const shell = CRS.$('#app-shell');
+    const splash = CRS.$('#app-splash');
+    const access = CRS.$('#access-state');
+    if (splash) splash.hidden = true;
+    if (access) access.hidden = true;
+    if (shell) shell.hidden = false;
+  }
+
+  function locationTarget(location) {
+    const source = location || {};
+    const params = Object.assign({}, source.parameter || {});
+    let route = params.view || (source.state && source.state.route) || source.hash || '';
+    if (!route && params.id) route = 'equipment-detail';
+    return normalizeRoute(route, params);
+  }
+
+  function getInitialLocation() {
+    return new Promise(function (resolve) {
+      if (global.google && google.script && google.script.url) {
+        google.script.url.getLocation(resolve);
+        return;
+      }
+      const raw = global.location.hash.replace(/^#/, '');
+      const parts = raw.split('?');
+      resolve({ hash: parts[0], parameter: Object.fromEntries(new URLSearchParams(parts[1] || '')) });
+    });
+  }
+
+  function showAccessError(error) {
+    const splash = CRS.$('#app-splash');
+    const shell = CRS.$('#app-shell');
+    const access = CRS.$('#access-state');
+    if (splash) splash.hidden = true;
+    if (shell) shell.hidden = true;
+    if (!access) return;
+    access.hidden = false;
+    CRS.setText(CRS.$('[data-access-title]', access),
+      error.code === 'USER_DISABLED' ? 'บัญชีถูกปิดใช้งาน' : 'ไม่สามารถเข้าใช้งานระบบ');
+    CRS.setText(CRS.$('[data-access-message]', access), error.message);
+    CRS.setText(CRS.$('[data-access-request-id]', access), error.requestId ? 'รหัสอ้างอิง: ' + error.requestId : '');
+  }
+
+  async function bootstrapApplication() {
+    const splash = CRS.$('#app-splash');
+    const access = CRS.$('#access-state');
+    if (splash) splash.hidden = false;
+    if (access) access.hidden = true;
+    try {
+      const data = await CRS.api.getAppBootstrap();
+      applyBootstrap(data);
+      const location = await getInitialLocation();
+      const target = locationTarget(location);
+      CRS.renderRoute(target.name, target.params);
+    } catch (error) {
+      showAccessError(error);
+      console.error(error);
+    }
+  }
+
+  document.addEventListener('click', function (event) {
+    const routeLink = event.target.closest('[data-route]');
+    if (routeLink) {
+      event.preventDefault();
+      CRS.navigate(routeLink.dataset.route, {});
+    }
+    const retry = event.target.closest('[data-action="retry-bootstrap"]');
+    if (retry) bootstrapApplication();
+  });
+
+  if (global.google && google.script && google.script.history) {
+    google.script.history.setChangeHandler(function (event) {
+      const target = locationTarget(Object.assign({}, event.location || {}, { state: event.state }));
+      CRS.renderRoute(target.name, target.params);
+    });
+  } else {
+    global.addEventListener('hashchange', async function () {
+      const target = locationTarget(await getInitialLocation());
+      CRS.renderRoute(target.name, target.params);
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', bootstrapApplication);
+  global.addEventListener('online', updateNetworkStatus);
+  global.addEventListener('offline', updateNetworkStatus);
+  document.addEventListener('DOMContentLoaded', updateNetworkStatus);
+})(window);
+</script>

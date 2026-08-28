@@ -15,13 +15,14 @@ function listEquipment_(query) {
       exactFilter_(record.status, query.status) &&
       exactFilter_(record.location, query.location) &&
       exactFilter_(record.department, query.department);
-  }).map(function (record) {
-    return equipmentDto_(record, categories, user.role === USER_ROLE.ADMIN);
   });
   var result = paginateRecords_(
     sortRecords_(records, pageQuery.sortBy, pageQuery.sortDirection),
     pageQuery
   );
+  result.items = result.items.map(function (record) {
+    return equipmentDto_(record, categories, user.role === USER_ROLE.ADMIN);
+  });
   result.facets = equipmentFacets_();
   return result;
 }

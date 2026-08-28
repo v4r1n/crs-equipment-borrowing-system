@@ -1,0 +1,371 @@
+<script>
+(function (global) {
+  'use strict';
+
+  const CRS = global.CRS;
+
+  function setVisible(element, visible) {
+    if (element) element.classList.toggle('d-none', !visible);
+  }
+
+  function todayInAppTimezone() {
+    const timezone = CRS.state.bootstrap.app.timezone || 'Asia/Bangkok';
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      year: 'numeric', month: '2-digit', day: '2-digit', timeZone: timezone
+    }).formatToParts(new Date());
+    const values = {};
+    parts.forEach(function (part) { values[part.type] = part.value; });
+    return values.year + '-' + values.month + '-' + values.day;
+  }
+
+  function fillBorrowAsset(page, equipment) {
+    CRS.setText('#borrow-equipment-summary-title', equipment.name);
+    CRS.setText('#borrow-equipment-category', equipment.category_name || 'ไม่ระบุหมวดหมู่');
+    CRS.setText('#borrow-equipment-asset-id', equipment.asset_id);
+    CRS.setText('#borrow-equipment-sku', equipment.sku || '—');
+    CRS.setText('#borrow-equipment-location', equipment.location || '—');
+    const status = CRS.$('#borrow-equipment-status', page);
+    if (status) status.outerHTML = CRS.statusBadge(equipment.status).replace('<span ', '<span id="borrow-equipment-status" ');
+    const image = CRS.$('#borrow-equipment-image', page);
+    const fallback = CRS.$('#borrow-equipment-image-fallback', page);
+    const imageUrl = CRS.safeImageUrl(equipment.image_url);
+    if (image && imageUrl) {
+      image.src = imageUrl;
+      image.alt = 'รูป ' + equipment.name;
+      setVisible(image, true);
+      setVisible(fallback, false);
+    }
+    const includedWrap = CRS.$('#borrow-included-items-wrap', page);
+    const includedList = CRS.$('#borrow-included-items', page);
+    const items = equipment.included_items || [];
+    if (includedList && items.length) {
+      includedList.innerHTML = items.map(function (item) {
+        return '<li>' + CRS.escapeHtml(item.item_name) + ' × ' + Number(item.quantity || 1).toLocaleString('th-TH') +
+          (item.is_required === false ? ' <span class="text-secondary">(ไม่บังคับ)</span>' : '') + '</li>';
+      }).join('');
+      setVisible(includedWrap, true);
+    }
+    const form = CRS.$('#form-borrow-request', page);
+    if (form) form.elements.asset_id.value = equipment.asset_id;
+    const session = CRS.state.bootstrap.session;
+    const borrowerName = CRS.$('#borrow-user-name');
+    const borrowerEmail = CRS.$('#borrow-user-email');
+    const borrowerDepartment = CRS.$('#borrow-user-department');
+    if (borrowerName) borrowerName.value = session.name || '—';
+    if (borrowerEmail) borrowerEmail.value = session.email;
+    if (borrowerDepartment) borrowerDepartment.value = session.department || 'ไม่ระบุ';
+  }
+
+  async function renderBorrow(params, token) {
+    const assetId = String(params.id || params.asset_id || '').trim().toUpperCase();
+    if (!/^AST-\d{6}$/.test(assetId)) {
+      CRS.navigate('equipment', {}, true);
+      return;
+    }
+    const page = CRS.mount('view-borrow-template');
+    CRS.$$('[data-action="back-to-equipment-detail"]', page).forEach(function (button) {
+      button.addEventListener('click', function () {
+        CRS.navigate('equipment-detail', { id: assetId });
+      });
+    });
+    const form = CRS.$('#form-borrow-request', page);
+    const purpose = form && form.elements.purpose;
+    const note = form && form.elements.note;
+    [purpose, note].forEach(function (field) {
+      if (!field) return;
+      const counter = CRS.$('[data-character-count="' + field.name + '"]', page);
+      const update = function () {
+        if (counter) counter.textContent = field.value.length.toLocaleString('th-TH') + '/' +
+          Number(field.maxLength).toLocaleString('th-TH');
+      };
+      field.addEventListener('input', update);
+      update();
+    });
+    try {
+      const equipment = await CRS.api.getEquipmentDetail(assetId);
+      if (token !== CRS.state.viewToken) return;
+      setVisible(CRS.$('#borrow-page-loading', page), false);
+      if (!equipment.can_borrow) {
+        const error = CRS.$('#borrow-page-error', page);
+        CRS.setText(CRS.$('[data-error-message]', error),
+          'อุปกรณ์นี้อยู่ในสถานะ “' + CRS.statusLabel(equipment.status) + '” จึงยังส่งคำขอยืมไม่ได้');
+        setVisible(error, true);
+        return;
+      }
+      fillBorrowAsset(page, equipment);
+      setVisible(CRS.$('#borrow-page-content', page), true);
+      const borrowDate = form.elements.borrow_date;
+      const dueDate = form.elements.due_date;
+      const today = todayInAppTimezone();
+      borrowDate.min = today;
+      dueDate.min = today;
+      if (!borrowDate.value) borrowDate.value = today;
+      if (!dueDate.value) dueDate.value = borrowDate.value;
+      borrowDate.addEventListener('change', function () {
+        dueDate.min = borrowDate.value || today;
+        if (!dueDate.value || dueDate.value < dueDate.min) dueDate.value = dueDate.min;
+      });
+      form.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        CRS.clearFieldErrors(form);
+        form.classList.add('was-validated');
+        if (!form.checkValidity()) return;
+        const data = new FormData(form);
+        const payload = {
+          asset_id: assetId,
+          borrow_date: String(data.get('borrow_date') || ''),
+          due_date: String(data.get('due_date') || ''),
+          purpose: String(data.get('purpose') || ''),
+          note: String(data.get('note') || '')
+        };
+        const submit = CRS.$('#borrow-submit', page);
+        submit.disabled = true;
+        try {
+          const result = await CRS.withLoading(function () {
+            return CRS.runMutation('borrow-request:' + assetId, 'createBorrowRequest', payload);
+          }, 'กำลังส่งคำขอยืม…');
+          CRS.toast('ส่งคำขอยืม ' + result.borrow_id + ' เรียบร้อยแล้ว', 'success');
+          CRS.navigate('my-borrow', { highlight: result.borrow_id });
+        } catch (error) {
+          CRS.handleError(error, { form: form });
+        } finally {
+          submit.disabled = false;
+        }
+      });
+    } catch (error) {
+      if (token !== CRS.state.viewToken) return;
+      setVisible(CRS.$('#borrow-page-loading', page), false);
+      const errorBox = CRS.$('#borrow-page-error', page);
+      CRS.setText(CRS.$('[data-error-message]', errorBox), error.message);
+      setVisible(errorBox, true);
+      CRS.handleError(error);
+    }
+  }
+
+  function borrowActionButtons(record) {
+    let buttons = '<button type="button" class="btn btn-sm btn-outline-secondary" data-action="open-asset" ' +
+      'data-asset-id="' + CRS.escapeHtml(record.asset_id) + '">ดูอุปกรณ์</button>';
+    if (record.status === 'CHECKED_OUT') {
+      buttons += '<button type="button" class="btn btn-sm btn-primary" data-action="request-return" ' +
+        'data-borrow-id="' + CRS.escapeHtml(record.borrow_id) + '" data-version="' +
+        Number(record.row_version) + '">แจ้งคืน</button>';
+    }
+    return '<div class="d-flex flex-wrap justify-content-end gap-2">' + buttons + '</div>';
+  }
+
+  function borrowStatus(record) {
+    return CRS.statusBadge(record.effective_status || record.status);
+  }
+
+  function renderBorrowCards(records) {
+    return records.map(function (record) {
+      return '<article class="card" data-borrow-id="' + CRS.escapeHtml(record.borrow_id) + '"><div class="card-body">' +
+        '<div class="d-flex align-items-start justify-content-between gap-3 mb-3"><div>' +
+        '<div class="small text-secondary">' + CRS.escapeHtml(record.borrow_id) + '</div>' +
+        '<h2 class="h6 mb-1">' + CRS.escapeHtml(record.asset_name) + '</h2>' +
+        '<div class="small text-secondary">' + CRS.escapeHtml(record.asset_id) + '</div></div>' +
+        borrowStatus(record) + '</div><div class="row g-2 small mb-3">' +
+        '<div class="col-6"><span class="text-secondary d-block">วันที่ยืม</span>' + CRS.escapeHtml(CRS.formatDate(record.borrow_date)) + '</div>' +
+        '<div class="col-6"><span class="text-secondary d-block">กำหนดคืน</span><span class="' +
+        (record.is_overdue ? 'text-danger fw-semibold' : '') + '">' + CRS.escapeHtml(CRS.formatDate(record.due_date)) + '</span></div>' +
+        '</div>' + (record.rejection_reason ? '<div class="alert alert-danger small py-2">เหตุผล: ' +
+          CRS.escapeHtml(record.rejection_reason) + '</div>' : '') + borrowActionButtons(record) + '</div></article>';
+    }).join('');
+  }
+
+  function renderBorrowRows(records) {
+    return records.map(function (record) {
+      return '<tr data-borrow-id="' + CRS.escapeHtml(record.borrow_id) + '"><td><div class="fw-semibold">' +
+        CRS.escapeHtml(record.asset_name) + '</div>' +
+        '<div class="small text-secondary">' + CRS.escapeHtml(record.borrow_id) + ' · ' +
+        CRS.escapeHtml(record.asset_id) + '</div></td><td>' + CRS.escapeHtml(CRS.formatDate(record.borrow_date)) +
+        '</td><td class="' + (record.is_overdue ? 'text-danger fw-semibold' : '') + '">' +
+        CRS.escapeHtml(CRS.formatDate(record.due_date)) + '</td><td>' + borrowStatus(record) +
+        '</td><td>' + borrowActionButtons(record) + '</td></tr>';
+    }).join('');
+  }
+
+  async function renderMyBorrow(params, token) {
+    const page = CRS.mount('view-my-borrow-template');
+    const allowedStatuses = [
+      'PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'CHECKED_OUT',
+      'RETURN_REQUESTED', 'RETURNED', 'CANCELLED', 'OVERDUE'
+    ];
+    const initialStatus = String(params.status || '').trim().toUpperCase();
+    const state = {
+      query: {
+        search: String(params.search || '').trim().slice(0, 200),
+        status: allowedStatuses.indexOf(initialStatus) === -1 ? '' : initialStatus,
+        page: 1,
+        pageSize: 12,
+        sortBy: 'requested_at',
+        sortDirection: 'desc'
+      },
+      historyQuery: { page: 1, pageSize: 20, sortBy: 'timestamp', sortDirection: 'desc' },
+      historyLoaded: false,
+      requests: { list: 0, history: 0 }
+    };
+    const listLoading = CRS.$('#my-borrow-loading', page);
+    const listError = CRS.$('#my-borrow-error', page);
+    const listEmpty = CRS.$('#my-borrow-empty', page);
+    const listResults = CRS.$('#my-borrow-results', page);
+    const listFilter = CRS.$('#form-my-borrow-filter', page);
+    listFilter.elements.search.value = state.query.search;
+    listFilter.elements.status.value = state.query.status;
+
+    async function loadList() {
+      const request = ++state.requests.list;
+      setVisible(listLoading, true);
+      setVisible(listError, false);
+      setVisible(listEmpty, false);
+      setVisible(listResults, false);
+      try {
+        const result = await CRS.api.listMyBorrowing(state.query);
+        if (token !== CRS.state.viewToken || request !== state.requests.list) return;
+        setVisible(listLoading, false);
+        CRS.setText('#my-borrow-results-summary', 'พบ ' + Number(result.total).toLocaleString('th-TH') + ' รายการ');
+        if (!result.items.length) {
+          setVisible(listEmpty, true);
+          return;
+        }
+        CRS.$('#my-borrow-list', page).innerHTML = renderBorrowCards(result.items);
+        CRS.$('#table-body-my-borrow', page).innerHTML = renderBorrowRows(result.items);
+        CRS.$('#pagination-my-borrow', page).innerHTML = CRS.paginationItems(result, 'my-borrow-page');
+        setVisible(listResults, true);
+        const highlightedBorrowId = String(params.highlight || '').trim().toUpperCase();
+        if (/^BR-\d{6}$/.test(highlightedBorrowId)) {
+          CRS.$$('[data-borrow-id="' + highlightedBorrowId + '"]', page).forEach(function (highlighted) {
+            const container = highlighted.closest('.card, tr');
+            if (container) container.classList.add('result-highlight');
+          });
+        }
+      } catch (error) {
+        if (token !== CRS.state.viewToken || request !== state.requests.list) return;
+        setVisible(listLoading, false);
+        CRS.setText(CRS.$('[data-error-message]', listError), error.message);
+        setVisible(listError, true);
+      }
+    }
+
+    async function loadHistory() {
+      const request = ++state.requests.history;
+      const loading = CRS.$('#my-history-loading', page);
+      const errorBox = CRS.$('#my-history-error', page);
+      const empty = CRS.$('#my-history-empty', page);
+      const list = CRS.$('#my-history-list', page);
+      setVisible(loading, true);
+      setVisible(errorBox, false);
+      setVisible(empty, false);
+      setVisible(list, false);
+      try {
+        const result = await CRS.api.listMyHistory(state.historyQuery);
+        if (token !== CRS.state.viewToken || request !== state.requests.history) return;
+        setVisible(loading, false);
+        state.historyLoaded = true;
+        if (!result.items.length) {
+          setVisible(empty, true);
+          CRS.$('#pagination-my-history', page).innerHTML = '';
+          return;
+        }
+        list.innerHTML = result.items.map(function (record) {
+          return '<li class="list-group-item p-3"><div class="d-flex justify-content-between gap-3">' +
+            '<div><div class="fw-semibold">' + CRS.escapeHtml(CRS.actionLabel(record.action)) + '</div>' +
+            '<div class="small text-secondary">' + CRS.escapeHtml(record.asset_id || record.entity_id) +
+            (record.note ? ' · ' + CRS.escapeHtml(record.note) : '') + '</div></div>' +
+            '<time class="small text-secondary flex-shrink-0">' + CRS.escapeHtml(CRS.formatDateTime(record.timestamp)) +
+            '</time></div></li>';
+        }).join('');
+        CRS.$('#pagination-my-history', page).innerHTML = CRS.paginationItems(result, 'my-history-page');
+        setVisible(list, true);
+      } catch (error) {
+        if (token !== CRS.state.viewToken || request !== state.requests.history) return;
+        setVisible(loading, false);
+        errorBox.textContent = error.message;
+        setVisible(errorBox, true);
+      }
+    }
+
+    listFilter.addEventListener('submit', function (event) {
+      event.preventDefault();
+      const data = new FormData(event.currentTarget);
+      state.query = Object.assign({}, state.query, {
+        search: String(data.get('search') || ''),
+        status: String(data.get('status') || ''),
+        sortBy: String(data.get('sortBy') || 'requested_at'),
+        sortDirection: String(data.get('sortDirection') || 'desc'),
+        page: 1
+      });
+      loadList();
+    });
+    CRS.$('#form-my-history-filter', page).addEventListener('submit', function (event) {
+      event.preventDefault();
+      state.historyQuery.search = String(new FormData(event.currentTarget).get('search') || '');
+      state.historyQuery.page = 1;
+      loadHistory();
+    });
+    CRS.$('#my-borrow-history-tab', page).addEventListener('shown.bs.tab', function () {
+      if (!state.historyLoaded) loadHistory();
+    });
+    page.addEventListener('click', function (event) {
+      const action = event.target.closest('[data-action]');
+      if (!action) return;
+      if (action.dataset.action === 'reload-my-borrow') loadList();
+      if (action.dataset.action === 'my-borrow-page' && !action.disabled) {
+        state.query.page = Number(action.dataset.page || 1);
+        loadList();
+      }
+      if (action.dataset.action === 'my-history-page' && !action.disabled) {
+        state.historyQuery.page = Number(action.dataset.page || 1);
+        loadHistory();
+      }
+      if (action.dataset.action === 'open-asset') {
+        CRS.navigate('equipment-detail', { id: action.dataset.assetId });
+      }
+      if (action.dataset.action === 'request-return') {
+        const form = CRS.$('#form-request-return', page);
+        form.reset();
+        form.elements.borrow_id.value = action.dataset.borrowId;
+        form.elements.expected_version.value = action.dataset.version;
+        CRS.openModal('#modal-request-return');
+      }
+    });
+    CRS.$('#form-request-return', page).addEventListener('submit', async function (event) {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const data = new FormData(form);
+      const borrowId = String(data.get('borrow_id') || '');
+      const expectedVersion = Number(data.get('expected_version'));
+      const payload = {
+        borrow_id: borrowId,
+        expected_version: expectedVersion,
+        note: String(data.get('note') || '')
+      };
+      const submit = CRS.$('[type="submit"]', form);
+      submit.disabled = true;
+      try {
+        await CRS.withLoading(function () {
+          return CRS.runMutation('request-return:' + borrowId + ':' + expectedVersion,
+            'requestReturn', payload);
+        }, 'กำลังบันทึกการแจ้งคืน…');
+        bootstrap.Modal.getOrCreateInstance(CRS.$('#modal-request-return', page)).hide();
+        CRS.toast('แจ้งคืนอุปกรณ์เรียบร้อยแล้ว กรุณานำอุปกรณ์ส่งให้ผู้ดูแล', 'success');
+        await loadList();
+      } catch (error) {
+        CRS.handleError(error, { form: form });
+      } finally {
+        submit.disabled = false;
+      }
+    });
+    await loadList();
+    if (params.tab === 'history') {
+      bootstrap.Tab.getOrCreateInstance(CRS.$('#my-borrow-history-tab', page)).show();
+    }
+  }
+
+  CRS.registerRoute('borrow', renderBorrow);
+  CRS.registerRoute('my-borrow', renderMyBorrow);
+  CRS.registerRoute('history', function (params, token) {
+    return renderMyBorrow(Object.assign({}, params, { tab: 'history' }), token);
+  });
+})(window);
+</script>
