@@ -158,7 +158,7 @@ function decodeImagePayload_(payload, expectedMimeType, maximumBytes) {
   try {
     return Utilities.base64Decode(encoded);
   } catch (error) {
-    throw new AppError('VALIDATION_FAILED', 'ข้อมูลไฟล์ภาพไม่ถูกต้อง', {
+    throw new AppError_('VALIDATION_FAILED', 'ข้อมูลไฟล์ภาพไม่ถูกต้อง', {
       fieldErrors: fieldError_('image', 'ไม่สามารถอ่านไฟล์ภาพนี้ได้')
     }, false);
   }
@@ -188,7 +188,7 @@ function getImageFolder_(folderId) {
   try {
     return DriveApp.getFolderById(folderId);
   } catch (error) {
-    throw new AppError('CONFIG_ERROR',
+    throw new AppError_('CONFIG_ERROR',
       'ไม่สามารถเปิดโฟลเดอร์รูปภาพได้ กรุณาตรวจ DRIVE_FOLDER_ID และสิทธิ์เข้าถึง', null, false);
   }
 }

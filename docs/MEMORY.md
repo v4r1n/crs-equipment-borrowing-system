@@ -1,6 +1,6 @@
 # Project Memory
 
-Last updated: 2026-08-28
+Last updated: 2026-08-30
 
 ## Current state
 
@@ -11,7 +11,8 @@ Last updated: 2026-08-28
 - Completed: Phase 3 — Workspace authentication, guarded RPCs, domain services, durable operation recovery, Drive images, integrity audit, and schema v3 migrations
 - Completed: Phase 4 — responsive Thai SPA shell, navigation, dashboards, equipment/borrowing/admin screens, forms, state handling, and client RPC integration
 - Completed: Phase 5 — canonical QR generation/display, PNG sticker download, image-capture/file scanning, strict payload validation, and Admin exact-asset handoff
-- Next: Phase 6 — automated contract tests and end-to-end workflow/responsive acceptance
+- Completed: Phase 6 — automated source contracts, in-memory Apps Script workflow tests, local-browser acceptance, responsive verification, and ID-boundary hardening
+- Next: Phase 7 — deployment guide, deployer handoff, and live Google Workspace acceptance checklist
 
 ## Frozen contracts
 
@@ -69,4 +70,15 @@ Last updated: 2026-08-28
 - Valid admin scan follow-up uses the existing exact `assetId` server filter and confirmation-based borrow workflow rather than mutating from decoded content.
 - QR contract checks pass 5 valid and 22 hostile payload cases, including inherited `Object.prototype` query-key names; server web-app URL normalization passes 14 HTTPS/malformed/credential/port cases, and the generated canonical URL produces a valid 49-by-49 level-Q matrix.
 - Final static integration checks pass all 23 individual and combined `.gs` sources, nine browser scripts, 18 allowlisted includes, nine registered routes, 321 unique literal markup IDs, `appsscript.json`, vendor checksums, `git diff --check`, and the no-live-camera-call contract outside vendored code.
-- Live mobile file-picker/camera capture, physical sticker scanning, browser download/clipboard behavior, and deployed HTML-service acceptance remain for Phase 6/7.
+- Local Chromium download/clipboard acceptance passes; live mobile file-picker/camera capture, physical sticker scanning, and deployed HTML-service acceptance remain for Phase 7.
+
+## Phase 6 verification
+
+- `npm run test` passes 26 automated tests: seven source/security contracts, thirteen backend service tests, and six Playwright browser acceptance tests.
+- The backend suite runs the real setup, repository, authentication, operation journal, equipment, borrowing, user, category, dashboard, history, and integrity services against faithful in-memory Spreadsheet, Properties, Cache, Lock, Session, Utilities, and Script service doubles.
+- End-to-end service coverage verifies fail-closed identity and Admin permissions, the guarded request → approve → checkout → return-request → inspected-return lifecycle, idempotent retries, double-book prevention including a STARTED operation before Borrow ID allocation, overdue boundaries, return checklist rules, append-only History, setup idempotency, migration checksum drift, duplicate business keys, and integrity-audit findings.
+- Sequence allocation now preserves exact six-digit IDs and exact three-digit Category IDs at the upper boundary. Requests that cannot fit the frozen format fail atomically with `ID_EXHAUSTED`; public User/Category validators and BorrowItems recovery checks reject over-width IDs.
+- The only callable top-level server functions are the 32 guarded RPC wrappers plus deliberate `doGet` and `setupSystem` entry points; the error constructor is private as `AppError_`.
+- Playwright assembles the real Apps Script HTML includes locally, uses deterministic `google.script.run` and Bootstrap compatibility doubles, and passes six acceptance scenarios. It exercises QR sticker download/copy, strict scan/manual fallback, Admin exact-asset handoff, guarded Admin action modals, Thai failure feedback, and 18 route/viewport combinations across 320, 768, and 1440 pixels without document overflow.
+- The 320-pixel Admin tab strip is horizontally contained and remains scrollable; quick filters and data tables scroll within their own regions.
+- Actual Workspace identity, Apps Script authorization prompts/quotas, Google Sheets and Drive behavior, deployed HTML-service sandbox behavior, physical sticker scanning, and native mobile camera/file-picker behavior remain Phase 7 deployer acceptance because they require organization-owned resources and devices.

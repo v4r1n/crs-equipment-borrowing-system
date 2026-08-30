@@ -103,7 +103,7 @@ Primary key: `sequence_name`. Headers:
 
 `sequence_name, prefix, padding, next_value, updated_at`
 
-Allocation occurs only under Script Lock. Gaps are valid and IDs are never decremented/reused.
+Allocation occurs only under Script Lock. Gaps are valid and IDs are never decremented/reused. Padding is a fixed contract, not a minimum width: six-digit sequences stop at `999999` and Category stops at `999`. If a requested allocation would cross that boundary or only colliding IDs remain at the boundary, the whole allocation fails without advancing `next_value` and returns `ID_EXHAUSTED`.
 
 ### SchemaMigrations
 

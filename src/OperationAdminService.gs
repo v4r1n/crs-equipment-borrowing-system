@@ -153,7 +153,7 @@ function reconcileOperationForAdmin_(operationId) {
     result = reconcileAutoProvisionOperationForAdmin_(commandId);
   }
   if (!result) {
-    throw new AppError('UNSUPPORTED_OPERATION',
+    throw new AppError_('UNSUPPORTED_OPERATION',
       'ยังไม่รองรับการกู้คืน operation action: ' + operation.action, null, false);
   }
   return getOperationDetailForAdmin_(commandId);

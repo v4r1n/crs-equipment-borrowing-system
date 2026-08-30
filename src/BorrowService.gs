@@ -680,7 +680,7 @@ function ensureBorrowItemSnapshotLocked_(borrow, equipment) {
       String(definition.is_required).toUpperCase() === 'FALSE');
     var snapshotRequired = !(snapshot.is_required === false ||
       String(snapshot.is_required).toUpperCase() === 'FALSE');
-    assertApp_(/^BIT-\d{6,}$/.test(snapshot.borrow_item_id) &&
+    assertApp_(/^BIT-\d{6}$/.test(snapshot.borrow_item_id) &&
       snapshot.borrow_id === borrow.borrow_id && snapshot.item_id === definition.item_id &&
       snapshot.item_name === definition.item_name &&
       Number(snapshot.expected_quantity) === Number(definition.quantity) &&

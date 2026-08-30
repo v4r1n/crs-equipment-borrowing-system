@@ -97,3 +97,11 @@ V1 vendors exact browser distributions of `qrcode-generator` 2.0.4 and `html5-qr
 Apps Script HTML Service restricts permission-sensitive `navigator.mediaDevices.getUserMedia()` use inside its sandbox. The in-app scanner therefore calls only `html5-qrcode.scanFile()` against a user-selected image; `capture="environment"` lets supported mobile browsers offer their native camera while manual Asset ID remains available. The application does not call the library's live-camera APIs. A future continuous preview requires a separately hosted HTTPS scanner and a new reviewed trust boundary.
 
 Decoded content is untrusted. The client accepts only an exact Asset ID or an HTTPS URL whose origin and path equal `bootstrap.app.webAppUrl`, whose optional view is `equipment-detail`, and whose sole ID matches `AST-000001`. Valid scans navigate internally and never execute a decoded URL or mutation. Admin scan follow-up passes an exact `assetId` to the already-authorized borrowing query and reuses confirmation-based workflows.
+
+## ADR-015 — Deterministic local acceptance and explicit deployment acceptance
+
+Status: Accepted — 2026-08-30
+
+Phase 6 uses three complementary local layers. Node source contracts compile every Apps Script and browser partial and freeze security-sensitive registries and formats. Backend tests execute the real repositories and domain services against faithful in-memory doubles for the Apps Script services needed by the tested workflows. Playwright assembles the real HTML-service includes, substitutes deterministic test-only Bootstrap and `google.script.run` adapters, and verifies UI behavior and responsive containment without a deployed URL.
+
+These doubles are test infrastructure only and are never included in `src/` or the Apps Script deployment. They provide reproducible workflow and regression evidence but cannot establish live Google Workspace identity, authorization prompts, quotas, Drive sharing, HTML-service sandbox behavior, or native mobile capture. Those boundaries remain an explicit Phase 7 deployment matrix instead of being represented by misleading local mocks.

@@ -196,7 +196,7 @@ function normalizeCategorySortOrder_(value) {
 
 function requireCategoryRecordId_(value) {
   var categoryId = normalizeWhitespace_(value).toUpperCase();
-  assertApp_(/^CAT-\d{3,}$/.test(categoryId), 'VALIDATION_FAILED', 'Category ID ไม่ถูกต้อง', {
+  assertApp_(/^CAT-\d{3}$/.test(categoryId), 'VALIDATION_FAILED', 'Category ID ไม่ถูกต้อง', {
     fieldErrors: fieldError_('category_id', 'Category ID ต้องอยู่ในรูปแบบ CAT-001')
   }, false);
   return categoryId;

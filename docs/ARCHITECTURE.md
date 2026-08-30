@@ -39,6 +39,10 @@ API เปิดเฉพาะ use-case ที่ชัดเจน เช่�
 
 repository อ่าน header และ `getValues()` ครั้งเดียวต่อชุดข้อมูล แปลง row เป็น plain object และ batch write กลับด้วย `setValues()` จึงไม่ผูก domain logic กับเลขแถวหรือ Spreadsheet API โดยตรง
 
+### Verification layers
+
+ชุดทดสอบ local แบ่งเป็นสามชั้น: source/security contracts compile ไฟล์ Apps Script และ browser ทั้งหมดพร้อมตรวจ public surface, routes/includes, ID/QR contracts; backend tests รัน domain services จริงกับ in-memory Apps Script service doubles; Playwright ประกอบ HTML includes จริงและจำลอง `google.script.run` เพื่อทดสอบ navigation, feedback, QR UI และ responsive layout โดยไม่ต้อง deploy. Google Workspace identity, authorization, Sheets/Drive จริง, HTML-service sandbox และ native mobile capture เป็น deployment acceptance แยกต่างหาก เพราะ local doubles ไม่ควรถูกใช้เป็นหลักฐานแทนบริการจริง
+
 ## Mutation protocol
 
 ทุก mutation สำคัญใช้ลำดับเดียวกัน:

@@ -3,7 +3,7 @@ function getSpreadsheet_() {
   if (config.SPREADSHEET_ID) {
     try { return SpreadsheetApp.openById(config.SPREADSHEET_ID); }
     catch (error) {
-      throw new AppError('CONFIG_ERROR', 'ไม่สามารถเปิด Google Sheet ได้ กรุณาตรวจ Spreadsheet ID', null, false);
+      throw new AppError_('CONFIG_ERROR', 'ไม่สามารถเปิด Google Sheet ได้ กรุณาตรวจ Spreadsheet ID', null, false);
     }
   }
   var active = SpreadsheetApp.getActiveSpreadsheet();

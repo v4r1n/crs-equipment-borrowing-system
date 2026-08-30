@@ -47,10 +47,16 @@ function nextIdsLocked_(sequenceName, count) {
   var candidateNumber = Number(sequence.next_value);
   assertApp_(Number.isSafeInteger(candidateNumber) && candidateNumber > 0,
     'SCHEMA_ERROR', 'ค่า sequence ไม่ถูกต้อง: ' + sequenceName, null, false);
+  var maximumNumber = Math.pow(10, definition.padding) - 1;
   var candidates = [];
   var attempts = 0;
   var existingIds = getFieldValueSet_(definition.sheet, definition.idField);
   while (candidates.length < requested) {
+    assertApp_(candidateNumber <= maximumNumber, 'ID_EXHAUSTED',
+      'ช่วงหมายเลข ' + definition.prefix + ' เต็มแล้ว กรุณาติดต่อผู้ดูแลระบบ', {
+        sequenceName: sequenceName,
+        maximumNumber: maximumNumber
+      }, false);
     var candidate = definition.prefix + padNumber_(candidateNumber, definition.padding);
     candidateNumber += 1;
     attempts += 1;
@@ -192,7 +198,7 @@ function migrateOperationResultHashesLocked_() {
     try {
       result = JSON.parse(serialized);
     } catch (error) {
-      throw new AppError('SCHEMA_ERROR',
+      throw new AppError_('SCHEMA_ERROR',
         'ไม่สามารถย้าย result ของ operation ' + operation.operation_id + ' เพราะ JSON ไม่สมบูรณ์',
         null, false);
     }

@@ -1,4 +1,4 @@
-function AppError(code, message, details, retryable) {
+function AppError_(code, message, details, retryable) {
   this.name = 'AppError';
   this.code = code || 'INTERNAL';
   this.message = message || 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง';
@@ -7,11 +7,11 @@ function AppError(code, message, details, retryable) {
   this.stack = new Error(this.message).stack;
 }
 
-AppError.prototype = Object.create(Error.prototype);
-AppError.prototype.constructor = AppError;
+AppError_.prototype = Object.create(Error.prototype);
+AppError_.prototype.constructor = AppError_;
 
 function assertApp_(condition, code, message, details, retryable) {
-  if (!condition) throw new AppError(code, message, details, retryable);
+  if (!condition) throw new AppError_(code, message, details, retryable);
 }
 
 function toPublicError_(error, requestId) {
@@ -45,4 +45,3 @@ function executeSafely_(handler) {
     return toPublicError_(error, requestId);
   }
 }
-

@@ -145,7 +145,7 @@ function operationBeforeState_(operation) {
   try {
     return JSON.parse(String(operation.before_json || 'null'));
   } catch (error) {
-    throw new AppError('SCHEMA_ERROR',
+    throw new AppError_('SCHEMA_ERROR',
       'ข้อมูลก่อนทำ operation ไม่สมบูรณ์: ' + operation.operation_id, null, false);
   }
 }
@@ -159,8 +159,8 @@ function operationPayload_(operation) {
       'payload ของ operation ไม่ตรงกับ hash: ' + operation.operation_id, null, false);
     return payload;
   } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new AppError('SCHEMA_ERROR',
+    if (error instanceof AppError_) throw error;
+    throw new AppError_('SCHEMA_ERROR',
       'ข้อมูล payload ของ operation ไม่สมบูรณ์: ' + operation.operation_id, null, false);
   }
 }
@@ -174,8 +174,8 @@ function operationResult_(operation) {
       'ผลลัพธ์ของ operation ไม่ตรงกับ hash: ' + operation.operation_id, null, false);
     return result;
   } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new AppError('SCHEMA_ERROR',
+    if (error instanceof AppError_) throw error;
+    throw new AppError_('SCHEMA_ERROR',
       'ข้อมูลผลลัพธ์ของ operation ไม่สมบูรณ์: ' + operation.operation_id, null, false);
   }
 }

@@ -21,6 +21,10 @@
 
 อ่านรายละเอียดได้ที่ [Architecture](docs/ARCHITECTURE.md), [Database](docs/DATABASE.md) และ [Workflows](docs/WORKFLOWS.md)
 
+## การทดสอบในเครื่อง
+
+ต้องใช้ Node.js 20 ขึ้นไป จากนั้นรัน `npm install`, `npx playwright install chromium` และ `npm run test` ชุดทดสอบจะตรวจ source contracts, workflow backend ด้วยฐานข้อมูลจำลองในหน่วยความจำ และ UI/responsive ด้วย Chromium โดยไม่ต้องมี Google Sheet หรือ Web App deployment อ่านขอบเขตและรายการตรวจบนระบบจริงได้ที่ [Manual acceptance](tests/MANUAL_ACCEPTANCE.md)
+
 ## ข้อกำหนดสำคัญด้านบัญชี
 
 V1 ออกแบบสำหรับผู้ใช้ภายใน Google Workspace domain เดียวกัน การ deploy ต้องจำกัดผู้เข้าถึงตาม domain และต้องทดสอบว่า `Session.getActiveUser().getEmail()` คืนอีเมลของผู้ใช้จริง หากเป็นบัญชี Gmail ส่วนตัวหรือข้าม domain อาจได้อีเมลว่าง ซึ่งระบบจะปฏิเสธการเข้าใช้งานตามหลัก fail closed
@@ -32,4 +36,3 @@ V1 ออกแบบสำหรับผู้ใช้ภายใน Google 
 ## สถานะ
 
 กำลังพัฒนา V1 บน branch `codex/initial-v1` โดยส่งมอบและ commit แยกตาม 7 phases ที่ระบุในสเปก
-

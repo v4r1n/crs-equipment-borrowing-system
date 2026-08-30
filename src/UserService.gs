@@ -173,7 +173,7 @@ function normalizeUserInput_(input) {
 
 function requireUserRecordId_(value) {
   var userId = normalizeWhitespace_(value).toUpperCase();
-  assertApp_(/^USR-\d{6,}$/.test(userId), 'VALIDATION_FAILED', 'User ID ไม่ถูกต้อง', {
+  assertApp_(/^USR-\d{6}$/.test(userId), 'VALIDATION_FAILED', 'User ID ไม่ถูกต้อง', {
     fieldErrors: fieldError_('user_id', 'User ID ต้องอยู่ในรูปแบบ USR-000001')
   }, false);
   return userId;
