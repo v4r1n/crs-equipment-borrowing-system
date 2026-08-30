@@ -51,9 +51,42 @@ test('all server, browser, and manifest sources compile', () => {
   for (const file of browserFiles) {
     new vm.Script(wrappedScript(file), { filename: file });
   }
-  assert.doesNotThrow(() => JSON.parse(read('src/appsscript.json')));
+  const manifest = JSON.parse(read('src/appsscript.json'));
+  assert.deepEqual(manifest.oauthScopes, [
+    'https://www.googleapis.com/auth/drive',
+    'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/userinfo.email',
+  ]);
   assert.equal(serverFiles.length, 23);
   assert.equal(browserFiles.length, 9);
+});
+
+test('deployment runbook covers every runtime file, config key, and requested step', () => {
+  const guide = read('docs/DEPLOYMENT.md');
+  const runtimeFiles = fs.readdirSync(SRC)
+    .filter((file) => /\.(?:gs|html|json)$/.test(file))
+    .sort();
+  assert.equal(runtimeFiles.length, 43);
+  for (const file of runtimeFiles) {
+    const escapedFile = file.replaceAll('.', '\\.');
+    assert.match(guide, new RegExp(`\\b${escapedFile}\\b`),
+      `${file} must be named in the deployment inventory`);
+  }
+
+  const configBlock = read('src/Config.gs')
+    .match(/var CONFIG = Object\.freeze\(\{([\s\S]*?)\n\}\);/);
+  assert.ok(configBlock, 'central CONFIG block must remain discoverable');
+  const configKeys = [...configBlock[1].matchAll(/^\s{2}([A-Z][A-Z0-9_]+):/gm)]
+    .map((match) => match[1]);
+  for (const key of configKeys) {
+    assert.match(guide, new RegExp(`\\b${key}\\b`),
+      `${key} must be documented for the deployer`);
+  }
+
+  const steps = [...guide.matchAll(/^## (\d+)\./gm)]
+    .map((match) => Number(match[1]));
+  assert.deepEqual(steps, Array.from({ length: 11 }, (_, index) => index + 1));
+  assert.match(read('src/Setup.gs'), /event:\s*'SETUP_COMPLETED'/);
 });
 
 test('server exposes only the guarded RPCs and deliberate Apps Script entry points', () => {
@@ -197,6 +230,80 @@ test('record validators reject over-width identifiers', () => {
   assert.throws(() => context.requireCategoryRecordId_('CAT-1000'),
     (error) => error && error.code === 'VALIDATION_FAILED');
   assert.doesNotMatch(read('src/BorrowService.gs'), /BIT-\\d\{6,\}/);
+});
+
+test('server QR base accepts only the current canonical Apps Script exec URL', () => {
+  const context = loadServerContext();
+  const base = 'https://script.google.com/macros/s/AKfycbDeployment_123/exec';
+  const other = 'https://script.google.com/macros/s/AKfycbOther_456/exec';
+  let configured = '';
+  let detected = base;
+  context.getRuntimeConfig_ = () => ({ WEB_APP_URL: configured });
+  context.ScriptApp = { getService: () => ({ getUrl: () => detected }) };
+
+  assert.equal(context.getWebAppBaseUrl_(), base);
+  assert.equal(context.buildAssetUrl_('AST-000001'),
+    `${base}?view=equipment-detail&id=AST-000001`);
+  detected = `${base}/`;
+  assert.equal(context.getWebAppBaseUrl_(), base);
+
+  configured = base;
+  detected = base;
+  assert.equal(context.getWebAppBaseUrl_(), base);
+  detected = `${base.replace('/exec', '/dev')}`;
+  assert.equal(context.getWebAppBaseUrl_(), base,
+    'a /dev execution must keep the configured production /exec base');
+  detected = other;
+  assert.equal(context.getWebAppBaseUrl_(), '',
+    'a configured deployment must match the detected deployment');
+
+  detected = base;
+  const invalid = [
+    base.replace('/exec', '/dev'),
+    'https://example.com/macros/s/AKfycbDeployment_123/exec',
+    'https://script.googleusercontent.com/macros/s/AKfycbDeployment_123/exec',
+    'https://user@script.google.com/macros/s/AKfycbDeployment_123/exec',
+    'https://script.google.com:443/macros/s/AKfycbDeployment_123/exec',
+    `${base}?view=equipment`,
+    `${base}#fragment`,
+    `${base}/extra`,
+  ];
+  for (const value of invalid) {
+    configured = value;
+    assert.equal(context.getWebAppBaseUrl_(), '', value);
+  }
+});
+
+test('Drive sharing failures keep a stable application error code', () => {
+  const context = loadServerContext();
+  context.DriveApp = {
+    Access: {
+      DOMAIN_WITH_LINK: 'DOMAIN_WITH_LINK',
+      ANYONE_WITH_LINK: 'ANYONE_WITH_LINK',
+    },
+    Permission: { VIEW: 'VIEW' },
+  };
+  const denied = {
+    setSharing() { throw new Error('Sharing is disabled by organization policy'); },
+  };
+  assert.throws(
+    () => context.applyImageSharing_(denied, 'DOMAIN_WITH_LINK'),
+    (error) => error && error.code === 'DRIVE_SHARING_FAILED' && error.retryable === true,
+  );
+
+  let sharingAccess = '';
+  let sharingPermission = '';
+  const accepted = {
+    setSharing(access, permission) {
+      sharingAccess = access;
+      sharingPermission = permission;
+    },
+    getSharingAccess: () => sharingAccess,
+    getSharingPermission: () => sharingPermission,
+  };
+  assert.doesNotThrow(() => context.applyImageSharing_(accepted, 'DOMAIN_WITH_LINK'));
+  assert.equal(sharingAccess, 'DOMAIN_WITH_LINK');
+  assert.equal(sharingPermission, 'VIEW');
 });
 
 test('QR parser accepts only an exact asset ID or canonical same-app URL', () => {

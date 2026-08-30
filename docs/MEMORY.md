@@ -1,18 +1,19 @@
 # Project Memory
 
-Last updated: 2026-08-30
+Last updated: 2026-08-31
 
 ## Current state
 
 - Active branch: `codex/initial-v1`
-- Current version: `0.1.0` under development
+- Current version: `0.1.0` release candidate; source complete, live deployment not signed off
 - Completed: Phase 1 — architecture, schema, workflow, project rules, migration direction
 - Completed: Phase 2 — manifest/config, schema setup, immutable migration ledger, sequences, repositories, utilities, validation, cache helpers
 - Completed: Phase 3 — Workspace authentication, guarded RPCs, domain services, durable operation recovery, Drive images, integrity audit, and schema v3 migrations
 - Completed: Phase 4 — responsive Thai SPA shell, navigation, dashboards, equipment/borrowing/admin screens, forms, state handling, and client RPC integration
 - Completed: Phase 5 — canonical QR generation/display, PNG sticker download, image-capture/file scanning, strict payload validation, and Admin exact-asset handoff
 - Completed: Phase 6 — automated source contracts, in-memory Apps Script workflow tests, local-browser acceptance, responsive verification, and ID-boundary hardening
-- Next: Phase 7 — deployment guide, deployer handoff, and live Google Workspace acceptance checklist
+- Completed: Phase 7 — deployment guide, exact configuration/source inventory, authorization and domain-only rollout, User/Admin acceptance, stable-URL release/rollback, monitoring, backup, and troubleshooting handoff
+- Next: organization deployer creates the Workspace resources, deploys the reviewed commit, and completes every live acceptance row before go-live
 
 ## Frozen contracts
 
@@ -82,3 +83,15 @@ Last updated: 2026-08-30
 - Playwright assembles the real Apps Script HTML includes locally, uses deterministic `google.script.run` and Bootstrap compatibility doubles, and passes six acceptance scenarios. It exercises QR sticker download/copy, strict scan/manual fallback, Admin exact-asset handoff, guarded Admin action modals, Thai failure feedback, and 18 route/viewport combinations across 320, 768, and 1440 pixels without document overflow.
 - The 320-pixel Admin tab strip is horizontally contained and remains scrollable; quick filters and data tables scroll within their own regions.
 - Actual Workspace identity, Apps Script authorization prompts/quotas, Google Sheets and Drive behavior, deployed HTML-service sandbox behavior, physical sticker scanning, and native mobile camera/file-picker behavior remain Phase 7 deployer acceptance because they require organization-owned resources and devices.
+
+## Phase 7 verification
+
+- Final `npm run test` passes 30 automated tests: ten source/security/deployment contracts, fourteen backend service/setup tests, and six Playwright browser acceptance tests.
+- Traced the deployment procedure against all 43 runtime source files, all 11 managed Sheet schemas, all 16 Script Property names and numeric constraints, first-admin bootstrap rules, image sharing modes, setup/migration behavior, and canonical `/exec` QR URL validation.
+- Documented the production security topology as an organization-controlled Workspace deployer, execute-as-deployer, domain-only access, no direct datastore access for ordinary users, and a mandatory second-account Active User identity pilot that fails closed.
+- Added all eleven requested deployment steps plus authorization scope review, UAT isolation, User/Admin workflow tests, physical QR/mobile checks, stable deployment updates, code-only rollback constraints, backups, monitoring, quotas, troubleshooting, and data-maintenance prohibitions.
+- `setupSystem()` now preflights image-sharing policy, configured Drive folder access, and exact current Web app URL before managed-sheet mutation, then writes a structured success event while preserving its RPC-safe result contract. Drive sharing exceptions map to the stable `DRIVE_SHARING_FAILED` code.
+- QR URL derivation now accepts only the canonical current `script.google.com/macros/s/.../exec` deployment; `/dev`, redirect/external hosts, credentials/ports, query/fragment suffixes, extra paths, and mismatched deployments fail closed.
+- The manifest pins only `drive`, `spreadsheets`, and `userinfo.email` OAuth scopes. Handoff explicitly covers no-direct-access datastore ACLs, restricted Apps Script editors, exact single-domain primary-email identity, same-domain image-link classification, non-retroactive file sharing, caught-error observability, project-wide property backups, and image-ID recovery.
+- Reviewed current official Google documentation for Web app identities/deployment settings, Session email limitations, Script Properties, scopes, versioned deployment updates, authorization, logging, and quotas on 2026-08-31.
+- Live deployment and acceptance were not performed because no organization-owned Workspace account, Sheet, Drive folder, separate User/Admin identities, or physical devices were supplied. The acceptance matrix is intentionally marked unsigned rather than substituting local mocks for production evidence.

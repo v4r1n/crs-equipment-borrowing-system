@@ -59,4 +59,4 @@ Complete this checklist at the end of every phase:
 
 ## Current delivery status
 
-Phases 1–6 are complete. Resume from the phase recorded in `docs/MEMORY.md`.
+Phases 1–7 source delivery is complete. Organization-owned Google Workspace deployment and live acceptance remain operational handoff work; follow `docs/DEPLOYMENT.md` and the exact state in `docs/MEMORY.md`.

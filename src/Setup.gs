@@ -3,10 +3,11 @@
  * The function is idempotent and never clears existing rows.
  */
 function setupSystem() {
-  return executeSafely_(function () {
+  var result = executeSafely_(function () {
     return withScriptLock_(function () {
       var config = getRuntimeConfig_();
       var setupAccess = assertSetupCaller_(config);
+      validateSetupDeploymentConfig_(config);
       var actorEmail = setupAccess.email;
       var spreadsheet = getSpreadsheet_();
       var migrationIds = Object.keys(MIGRATION_DEFINITIONS).sort();
@@ -44,7 +45,7 @@ function setupSystem() {
       if (!config.DRIVE_FOLDER_ID) warnings.push('ยังไม่ได้ตั้งค่า DRIVE_FOLDER_ID; การอัปโหลดรูปจะยังใช้งานไม่ได้');
       if (!config.ALLOWED_DOMAIN) warnings.push('ควรตั้งค่า ALLOWED_DOMAIN และจำกัด Web app ให้ใช้ภายใน Workspace domain');
       if (!getWebAppBaseUrl_()) {
-        warnings.push('ยังไม่พบ Web app URL แบบ HTTPS; หลัง deploy ให้ทดสอบ QR Code และตั้ง WEB_APP_URL หากระบบตรวจอัตโนมัติไม่ได้');
+        warnings.push('ยังไม่พบ Web app URL /exec ที่ตรงกับ deployment; หลัง deploy ให้ตั้ง WEB_APP_URL และทดสอบ QR Code');
       }
       return {
         message: 'ตั้งค่าระบบเรียบร้อยแล้ว',
@@ -54,6 +55,33 @@ function setupSystem() {
       };
     });
   });
+  if (result.ok) {
+    console.info(JSON.stringify({
+      event: 'SETUP_COMPLETED',
+      requestId: result.meta.requestId,
+      spreadsheetId: result.data.spreadsheetId,
+      sheets: result.data.sheets,
+      warnings: result.data.warnings
+    }));
+  }
+  return result;
+}
+
+function validateSetupDeploymentConfig_(config) {
+  normalizeImageSharingMode_(config.IMAGE_SHARING);
+  if (config.DRIVE_FOLDER_ID) {
+    try { DriveApp.getFolderById(config.DRIVE_FOLDER_ID); }
+    catch (error) {
+      throw new AppError_('CONFIG_ERROR',
+        'ไม่สามารถเปิดโฟลเดอร์รูปภาพได้ กรุณาตรวจ DRIVE_FOLDER_ID และสิทธิ์เข้าถึง', {
+          cause: String(error && error.message ? error.message : error)
+        }, false);
+    }
+  }
+  if (config.WEB_APP_URL) {
+    assertApp_(getWebAppBaseUrl_(), 'CONFIG_ERROR',
+      'WEB_APP_URL ต้องเป็น /exec URL ของ Apps Script deployment ปัจจุบัน', null, false);
+  }
 }
 
 function assertSetupCaller_(config) {

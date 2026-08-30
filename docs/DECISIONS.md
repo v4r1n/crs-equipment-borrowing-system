@@ -105,3 +105,17 @@ Status: Accepted — 2026-08-30
 Phase 6 uses three complementary local layers. Node source contracts compile every Apps Script and browser partial and freeze security-sensitive registries and formats. Backend tests execute the real repositories and domain services against faithful in-memory doubles for the Apps Script services needed by the tested workflows. Playwright assembles the real HTML-service includes, substitutes deterministic test-only Bootstrap and `google.script.run` adapters, and verifies UI behavior and responsive containment without a deployed URL.
 
 These doubles are test infrastructure only and are never included in `src/` or the Apps Script deployment. They provide reproducible workflow and regression evidence but cannot establish live Google Workspace identity, authorization prompts, quotas, Drive sharing, HTML-service sandbox behavior, or native mobile capture. Those boundaries remain an explicit Phase 7 deployment matrix instead of being represented by misleading local mocks.
+
+## ADR-016 — Owner-executed, domain-only versioned deployment
+
+Status: Accepted — 2026-08-31
+
+Production uses a versioned Web app that executes as a long-lived organization-controlled Workspace deployer (`USER_DEPLOYING`) and is accessible only to that Workspace domain (`DOMAIN`). The deployer owns or can edit the configured Sheet and Drive folder; ordinary application users receive no direct datastore access at any role. Apps Script editors are approved release operators because they can change project-wide properties immediately. The manifest pins the exact Drive, Sheets, and user-email scopes required by source.
+
+`DOMAIN_WITH_LINK` is the default image policy, while `ANYONE_WITH_LINK` requires an explicit organization risk decision. This means any same-domain link holder can read an equipment image even without an active Users row; images must be classified for that audience. Sharing-property changes are not retroactive, and replaced files are retained until an evidence-aware storage reconciliation is performed.
+
+Because Google does not guarantee that Active User email is available in every execution context, rollout requires a second-account same-domain identity pilot. A blank or incorrect visitor identity stops rollout; it must not be worked around with EffectiveUser, anonymous/public access, or client-supplied identity. Changing to execute-as-user would require each visitor to authorize and access the underlying resources, so it is a new security architecture rather than a deployment toggle.
+
+Releases edit the existing deployment to point to a new immutable Apps Script version. This preserves the deployment ID and `/exec` URL used by printed QR stickers. Only a canonical `https://script.google.com/macros/s/.../exec` URL matching the service-reported deployment may become the QR base; `/dev`, redirect hosts, arbitrary HTTPS origins, and different deployments fail closed.
+
+The deployer account and deployment record are operational dependencies: versioned deployment ownership is not assumed to transfer safely when an employee account is removed. Code/manifest versions do not snapshot project-wide Script Properties or datastore state, so rollback also requires a separately controlled property baseline and schema compatibility review.

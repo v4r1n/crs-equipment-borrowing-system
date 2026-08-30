@@ -81,15 +81,18 @@ Google Sheets ไม่มี rollback/cross-sheet transaction จริง ล�
 ## Security boundaries
 
 - Deployment จำกัด Google Workspace domain เดียวและ unknown user ถูกปฏิเสธเป็นค่าเริ่มต้น
+- ผู้ใช้แอปทั่วไปไม่มี direct role ต่อ Sheet/Drive folder; เฉพาะผู้ deploy และผู้ดูแลที่อนุมัติเท่านั้นที่เข้าถึง datastore/project โดยตรง และ manifest pin OAuth scope เฉพาะ Drive, Sheets และ Active User email
 - server ไม่รับ user email, role, audit actor, timestamp หรือ protected status จาก browser เป็นความจริง
 - user อ่าน Borrow ของตนเองเท่านั้น; admin อ่านและ mutate ข้อมูลส่วนกลางตาม action ที่อนุญาต
 - ข้อมูล text ถูกจำกัดความยาว ป้องกัน formula injection ก่อนลง Sheet และ escape ก่อนเข้า HTML
 - QR มีไว้ระบุ Asset ID/route เท่านั้น ไม่ให้สิทธิ์และไม่ trigger mutation อัตโนมัติ
+- server รับ QR base เฉพาะ canonical `script.google.com/macros/s/.../exec` ที่ตรงกับ deployment ปัจจุบัน; `/dev`, host/path อื่น และ deployment ที่ไม่ตรง fail closed
 - QR scanner ไม่ตาม decoded URL โดยตรงและไม่ render payload เป็น HTML; external origins, duplicate/conflicting IDs และ query ที่ไม่รู้จักถูกปฏิเสธ
 - History ไม่มี update/delete endpoint และ reference records ใช้ inactive/retired แทน delete
 - Operations และ payload/before/result evidence ไม่มี generic browser endpoint; client ได้รับเฉพาะผลลัพธ์ use-case ที่ผ่าน authorization
 - รูปใน Drive รองรับเฉพาะ `DOMAIN_WITH_LINK` หรือ `ANYONE_WITH_LINK`, ตรวจ effective sharing หลังตั้งค่า และเก็บ resource key ใน URL เมื่อ Drive กำหนด; ไม่มีโหมด `PRIVATE` ที่อ้างว่า browser ของผู้ใช้คนอื่นเปิดรูปได้โดยไม่มี delivery proxy
+- `DOMAIN_WITH_LINK` เป็น authorization boundary ระดับ Workspace domain ไม่ใช่ Users row; same-domain link holder อาจดูรูปได้แม้เข้าแอปไม่ได้ และการเปลี่ยน policy ไม่ย้อนสิทธิ์ไฟล์เก่า
 
 ## Deployment topology
 
-โปรเจกต์ Apps Script แบบ standalone เชื่อม Google Sheet ด้วย ID และ Drive folder ด้วย ID จาก Script Properties deploy เป็น Web app การใช้ deployment เดิมเมื่อลง version ใหม่ช่วยรักษา `/exec` URL ให้ QR sticker เดิมยังใช้ได้
+โปรเจกต์ Apps Script แบบ standalone เชื่อม Google Sheet และ Drive folder ด้วย ID จาก Script Properties Production ใช้ versioned Web app ที่ execute as ผู้ deploy และจำกัด access เฉพาะ Workspace domain เดียวกัน ผู้ใช้ทั่วไปจึงไม่มี direct access ต่อ Sheet/folder แต่ต้องผ่าน identity pilot ว่า `Session.getActiveUser().getEmail()` คืน visitor จริงก่อนเปิดใช้ การแก้ deployment เดิมให้ชี้ version ใหม่จะรักษา `/exec` URL และ QR sticker เดิม รายละเอียด deployment, rollback และ live acceptance อยู่ใน [DEPLOYMENT.md](DEPLOYMENT.md)

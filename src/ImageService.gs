@@ -247,13 +247,6 @@ function imageFileMatches_(file, digest, mimeType, byteLength) {
   }
 }
 
-function normalizeImageSharingMode_(sharingMode) {
-  var mode = normalizeWhitespace_(sharingMode || 'DOMAIN_WITH_LINK').toUpperCase();
-  assertApp_(['DOMAIN_WITH_LINK', 'ANYONE_WITH_LINK'].indexOf(mode) !== -1,
-    'CONFIG_ERROR', 'ค่า IMAGE_SHARING ไม่ถูกต้อง', null, false);
-  return mode;
-}
-
 function applyImageSharing_(file, sharingMode) {
   var mode = normalizeImageSharingMode_(sharingMode);
   var expectedAccess = null;
@@ -262,10 +255,19 @@ function applyImageSharing_(file, sharingMode) {
   } else if (mode === 'ANYONE_WITH_LINK') {
     expectedAccess = DriveApp.Access.ANYONE_WITH_LINK;
   }
-  file.setSharing(expectedAccess, DriveApp.Permission.VIEW);
-  assertApp_(file.getSharingAccess() === expectedAccess &&
-    file.getSharingPermission() === DriveApp.Permission.VIEW,
-  'DRIVE_SHARING_FAILED', 'ไม่สามารถตั้งค่าสิทธิ์ไฟล์ภาพตามนโยบายที่กำหนดได้', null, true);
+  try {
+    file.setSharing(expectedAccess, DriveApp.Permission.VIEW);
+    assertApp_(file.getSharingAccess() === expectedAccess &&
+      file.getSharingPermission() === DriveApp.Permission.VIEW,
+      'DRIVE_SHARING_FAILED',
+      'ไม่สามารถตั้งค่าสิทธิ์ไฟล์ภาพตามนโยบายที่กำหนดได้', null, true);
+  } catch (error) {
+    if (error && error.name === 'AppError') throw error;
+    throw new AppError_('DRIVE_SHARING_FAILED',
+      'ไม่สามารถตั้งค่าสิทธิ์ไฟล์ภาพตามนโยบายที่กำหนดได้', {
+        cause: String(error && error.message ? error.message : error)
+      }, true);
+  }
 }
 
 function getDriveResourceKey_(file) {

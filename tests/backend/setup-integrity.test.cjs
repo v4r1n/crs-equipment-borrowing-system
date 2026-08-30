@@ -63,6 +63,32 @@ test('first setup is restricted to a configured admin in the allowed domain', ()
   assert.equal(outside.spreadsheet.sheets.size, 0);
 });
 
+test('setup rejects invalid deployment properties before creating managed sheets', () => {
+  const cases = [
+    { name: 'image sharing mode', properties: { IMAGE_SHARING: 'PRIVATE' } },
+    { name: 'Drive folder access', properties: { DRIVE_FOLDER_ID: 'missing-folder' } },
+    {
+      name: 'development Web app URL',
+      properties: {
+        WEB_APP_URL: 'https://script.google.com/macros/s/test-deployment/dev'
+      }
+    },
+    {
+      name: 'different Web app deployment',
+      properties: {
+        WEB_APP_URL: 'https://script.google.com/macros/s/other-deployment/exec'
+      }
+    }
+  ];
+
+  for (const scenario of cases) {
+    const harness = createAppsScriptHarness({ properties: scenario.properties });
+    expectError(harness.invoke('setupSystem'), 'CONFIG_ERROR');
+    assert.equal(harness.spreadsheet.sheets.size, 0, scenario.name);
+    assert.equal(harness.scriptLock.held, false, scenario.name);
+  }
+});
+
 test('recorded migration checksum drift fails closed before setup mutates data', () => {
   const harness = bootstrappedHarness();
   const before = harness.records('SchemaMigrations').map((migration) => ({ ...migration }));

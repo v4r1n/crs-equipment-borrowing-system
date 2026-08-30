@@ -23,7 +23,7 @@
 
 ## การทดสอบในเครื่อง
 
-ต้องใช้ Node.js 20 ขึ้นไป จากนั้นรัน `npm install`, `npx playwright install chromium` และ `npm run test` ชุดทดสอบจะตรวจ source contracts, workflow backend ด้วยฐานข้อมูลจำลองในหน่วยความจำ และ UI/responsive ด้วย Chromium โดยไม่ต้องมี Google Sheet หรือ Web App deployment อ่านขอบเขตและรายการตรวจบนระบบจริงได้ที่ [Manual acceptance](tests/MANUAL_ACCEPTANCE.md)
+ต้องใช้ Node.js 20 ขึ้นไป จากนั้นรัน `npm ci`, `npx playwright install chromium` และ `npm run test` ชุดทดสอบจะตรวจ source contracts, workflow backend ด้วยฐานข้อมูลจำลองในหน่วยความจำ และ UI/responsive ด้วย Chromium โดยไม่ต้องมี Google Sheet หรือ Web App deployment อ่านขอบเขตและรายการตรวจบนระบบจริงได้ที่ [Manual acceptance](tests/MANUAL_ACCEPTANCE.md)
 
 ## ข้อกำหนดสำคัญด้านบัญชี
 
@@ -31,8 +31,8 @@ V1 ออกแบบสำหรับผู้ใช้ภายใน Google 
 
 ## การติดตั้ง
 
-คู่มือฉบับสมบูรณ์อยู่ที่ `docs/DEPLOYMENT.md` เมื่อจบ Phase 7 ขั้นตอนหลักคือสร้าง Google Sheet/Drive folder, คัดลอกไฟล์ใน `src/` เข้า Apps Script, ตั้ง Script Properties, รัน `setupSystem()`, authorize และ deploy เป็น Web app
+ทำตาม [คู่มือติดตั้งและ Deploy](docs/DEPLOYMENT.md) ซึ่งครอบคลุมการสร้าง Google Sheet/Drive folder, นำไฟล์ runtime 43 ไฟล์เข้า Apps Script, ตั้ง Script Properties, bootstrap Admin, authorize, deploy แบบ domain-only, ทดสอบ User/Admin, rollback และดูแลหลังเปิดใช้งาน
 
 ## สถานะ
 
-กำลังพัฒนา V1 บน branch `codex/initial-v1` โดยส่งมอบและ commit แยกตาม 7 phases ที่ระบุในสเปก
+Source สำหรับ V1 ทั้ง 7 phases เสร็จแล้วบน branch `codex/initial-v1` และอยู่ในสถานะ release candidate การ deploy ใน Google Workspace, identity pilot และ live acceptance ยังต้องทำโดยองค์กรด้วยบัญชีและทรัพยากรจริงก่อนประกาศ production

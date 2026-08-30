@@ -121,15 +121,30 @@ function stableJson_(value) {
 }
 
 function getWebAppBaseUrl_() {
-  var configured = getRuntimeConfig_().WEB_APP_URL;
-  var detected = '';
-  try { detected = ScriptApp.getService().getUrl() || ''; } catch (ignored) { detected = ''; }
-  var candidate = String(configured || detected).trim();
-  // QR links are security-sensitive navigation inputs. Fail closed for malformed,
-  // credential-bearing, non-HTTPS, or whitespace-containing deployment URLs.
-  if (/[?#]/.test(candidate)) return '';
-  var match = /^https:\/\/([A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?)(?::(\d{1,5}))?(\/[A-Za-z0-9._~!$&'()*+,;=:@%\/-]*)?$/.exec(candidate);
-  if (!match || match[1].indexOf('..') !== -1 || (match[2] && Number(match[2]) > 65535)) return '';
+  var configuredRaw = getRuntimeConfig_().WEB_APP_URL;
+  var detectedRaw = '';
+  try { detectedRaw = ScriptApp.getService().getUrl() || ''; }
+  catch (ignored) { detectedRaw = ''; }
+  var configured = normalizeWebAppExecUrl_(configuredRaw);
+  var detected = normalizeWebAppExecUrl_(detectedRaw);
+
+  // An explicitly configured value is authoritative but must identify the same
+  // deployed Apps Script service whenever Apps Script can report its /exec URL.
+  // A /dev URL is deliberately ignored as detection and never becomes a QR base.
+  if (String(configuredRaw || '').trim()) {
+    if (!configured || (detected && configured !== detected)) return '';
+    return configured;
+  }
+  return detected;
+}
+
+function normalizeWebAppExecUrl_(value) {
+  var candidate = String(value || '').trim();
+  // QR links are security-sensitive navigation inputs. Accept only Google's
+  // canonical versioned Web app endpoint, never /dev, redirect hosts, or aliases.
+  if (!/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec\/?$/.test(candidate)) {
+    return '';
+  }
   return candidate.replace(/\/$/, '');
 }
 

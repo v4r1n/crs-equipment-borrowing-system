@@ -71,3 +71,10 @@ function parseIntegerProperty_(value, fallback, minimum, maximum) {
   if (!Number.isInteger(parsed) || parsed < minimum || parsed > maximum) return fallback;
   return parsed;
 }
+
+function normalizeImageSharingMode_(sharingMode) {
+  var mode = normalizeWhitespace_(sharingMode || 'DOMAIN_WITH_LINK').toUpperCase();
+  assertApp_(['DOMAIN_WITH_LINK', 'ANYONE_WITH_LINK'].indexOf(mode) !== -1,
+    'CONFIG_ERROR', 'ค่า IMAGE_SHARING ไม่ถูกต้อง', null, false);
+  return mode;
+}
