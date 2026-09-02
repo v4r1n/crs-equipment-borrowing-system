@@ -4,12 +4,14 @@
  */
 var CONFIG = Object.freeze({
   APP_NAME: 'CRS Equipment Borrowing System',
-  APP_VERSION: '0.1.0',
+  APP_VERSION: '0.2.0',
   SPREADSHEET_ID: '',
   DRIVE_FOLDER_ID: '',
   WEB_APP_URL: '',
   ADMIN_EMAILS: ['admin@example.com'],
+  ALLOWED_DOMAINS: [],
   ALLOWED_DOMAIN: '',
+  GOOGLE_OAUTH_CLIENT_ID: '',
   TIMEZONE: 'Asia/Bangkok',
   LOCALE: 'th_TH',
   AUTO_PROVISION_USERS: false,
@@ -23,6 +25,7 @@ var CONFIG = Object.freeze({
 
 function getRuntimeConfig_() {
   var properties = PropertiesService.getScriptProperties().getProperties();
+  var allowedDomains = parseAllowedDomains_(properties);
   var maxPageSize = parseIntegerProperty_(properties.MAX_PAGE_SIZE, CONFIG.MAX_PAGE_SIZE, 1, 100);
   var defaultPageSize = Math.min(
     parseIntegerProperty_(properties.DEFAULT_PAGE_SIZE, CONFIG.DEFAULT_PAGE_SIZE, 1, 100),
@@ -37,7 +40,12 @@ function getRuntimeConfig_() {
     ADMIN_EMAILS: parseListProperty_(properties.ADMIN_EMAILS, CONFIG.ADMIN_EMAILS)
       .map(normalizeEmail_)
       .filter(Boolean),
+    ALLOWED_DOMAINS: allowedDomains,
     ALLOWED_DOMAIN: normalizeDomain_(valueOrDefault_(properties.ALLOWED_DOMAIN, CONFIG.ALLOWED_DOMAIN)),
+    GOOGLE_OAUTH_CLIENT_ID: valueOrDefault_(
+      properties.GOOGLE_OAUTH_CLIENT_ID,
+      CONFIG.GOOGLE_OAUTH_CLIENT_ID
+    ),
     TIMEZONE: valueOrDefault_(properties.TIMEZONE, CONFIG.TIMEZONE),
     LOCALE: valueOrDefault_(properties.LOCALE, CONFIG.LOCALE),
     AUTO_PROVISION_USERS: parseBooleanProperty_(properties.AUTO_PROVISION_USERS, CONFIG.AUTO_PROVISION_USERS),
@@ -48,6 +56,26 @@ function getRuntimeConfig_() {
     MAX_IMAGE_BYTES: parseIntegerProperty_(properties.MAX_IMAGE_BYTES, CONFIG.MAX_IMAGE_BYTES, 1024, 10 * 1024 * 1024),
     IMAGE_SHARING: valueOrDefault_(properties.IMAGE_SHARING, CONFIG.IMAGE_SHARING).toUpperCase()
   };
+}
+
+function parseAllowedDomains_(properties) {
+  var modernValue = properties && properties.ALLOWED_DOMAINS;
+  var rawDomains;
+  if (modernValue !== undefined && modernValue !== null && String(modernValue).trim() !== '') {
+    rawDomains = parseListProperty_(modernValue, []);
+  } else {
+    var legacyValue = valueOrDefault_(
+      properties && properties.ALLOWED_DOMAIN,
+      CONFIG.ALLOWED_DOMAIN
+    );
+    rawDomains = legacyValue ? [legacyValue] : CONFIG.ALLOWED_DOMAINS.slice();
+  }
+  var seen = Object.create(null);
+  return rawDomains.map(normalizeDomain_).filter(function (domain) {
+    if (!domain || seen[domain]) return false;
+    seen[domain] = true;
+    return true;
+  });
 }
 
 function valueOrDefault_(value, fallback) {

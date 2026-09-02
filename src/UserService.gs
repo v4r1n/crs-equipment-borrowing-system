@@ -1,5 +1,5 @@
-function listUsersForAdmin_(query) {
-  requireAdmin_(true);
+function listUsersForAdmin_(query, actor) {
+  assertAdminActor_(actor);
   query = query || {};
   var pageQuery = normalizePageQuery_(
     query,
@@ -25,7 +25,7 @@ function createUser_(input, actor) {
   input = input || {};
   var commandId = requireCommandId_(input.command_id);
   var normalized = normalizeUserInput_(input);
-  return withAdminMutation_(function (lockedActor) {
+  return withAdminMutation_(actor, function (lockedActor) {
     var spec = operationSpec_(commandId, 'CREATE_USER', 'USER', '', normalized, lockedActor);
     var operation = findOperationLocked_(spec);
     if (!operation) {
@@ -89,7 +89,7 @@ function updateUser_(input, actor) {
   var userId = requireUserRecordId_(input.user_id);
   var commandId = requireCommandId_(input.command_id);
   var normalized = normalizeUserInput_(input);
-  return withAdminMutation_(function (lockedActor) {
+  return withAdminMutation_(actor, function (lockedActor) {
     var current = findRecordById_(SHEETS.USERS, 'user_id', userId);
     assertApp_(current, 'NOT_FOUND', 'ไม่พบผู้ใช้ที่ต้องการแก้ไข', null, false);
     assertApp_(
@@ -180,13 +180,18 @@ function requireUserRecordId_(value) {
 }
 
 function assertAllowedUserDomain_(email) {
-  var domain = getRuntimeConfig_().ALLOWED_DOMAIN;
-  assertApp_(domain, 'CONFIG_ERROR', 'กรุณาตั้งค่า ALLOWED_DOMAIN ก่อนจัดการผู้ใช้', null, false);
-  assertApp_(isEmailInDomain_(email, domain), 'VALIDATION_FAILED',
-    'อีเมลอยู่นอกโดเมน Google Workspace ที่อนุญาต', {
-      fieldErrors: fieldError_('email', domain
-        ? 'กรุณาใช้อีเมลโดเมน @' + domain
-        : 'อีเมลไม่อยู่ในโดเมนที่อนุญาต')
+  var domains = getRuntimeConfig_().ALLOWED_DOMAINS || [];
+  assertApp_(domains.length, 'CONFIG_ERROR',
+    'กรุณาตั้งค่า ALLOWED_DOMAINS ก่อนจัดการผู้ใช้', null, false);
+  var allowed = domains.some(function (domain) {
+    return isEmailInDomain_(email, domain);
+  });
+  assertApp_(allowed, 'VALIDATION_FAILED',
+    'อีเมลอยู่นอกโดเมน Google ที่อนุญาต', {
+      fieldErrors: fieldError_('email',
+        'กรุณาใช้อีเมลในโดเมนที่อนุญาต: ' + domains.map(function (domain) {
+          return '@' + domain;
+        }).join(', '))
     }, false);
 }
 

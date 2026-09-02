@@ -11,7 +11,7 @@ const {
   expectOk
 } = require('./test-helpers.cjs');
 
-test('setupSystem creates the complete schema once and remains idempotent', () => {
+test('private setupSystem_ creates the complete schema once and remains idempotent', () => {
   const harness = createAppsScriptHarness();
   const first = harness.setup();
   const sheetNames = Object.keys(harness.context.SHEET_SCHEMAS);
@@ -52,14 +52,14 @@ test('setupSystem creates the complete schema once and remains idempotent', () =
 
 test('first setup is restricted to a configured admin in the allowed domain', () => {
   const harness = createAppsScriptHarness({ activeEmail: 'user@example.com' });
-  expectError(harness.invoke('setupSystem'), 'FORBIDDEN');
+  expectError(harness.invokeRaw('setupSystem_'), 'FORBIDDEN');
   assert.equal(harness.spreadsheet.sheets.size, 0);
 
   const outside = createAppsScriptHarness({
     activeEmail: 'admin@outside.example',
     properties: { ADMIN_EMAILS: 'admin@outside.example' }
   });
-  expectError(outside.invoke('setupSystem'), 'FORBIDDEN');
+  expectError(outside.invokeRaw('setupSystem_'), 'FORBIDDEN');
   assert.equal(outside.spreadsheet.sheets.size, 0);
 });
 
@@ -83,7 +83,7 @@ test('setup rejects invalid deployment properties before creating managed sheets
 
   for (const scenario of cases) {
     const harness = createAppsScriptHarness({ properties: scenario.properties });
-    expectError(harness.invoke('setupSystem'), 'CONFIG_ERROR');
+    expectError(harness.invokeRaw('setupSystem_'), 'CONFIG_ERROR');
     assert.equal(harness.spreadsheet.sheets.size, 0, scenario.name);
     assert.equal(harness.scriptLock.held, false, scenario.name);
   }
@@ -94,7 +94,7 @@ test('recorded migration checksum drift fails closed before setup mutates data',
   const before = harness.records('SchemaMigrations').map((migration) => ({ ...migration }));
   harness.replaceCell('SchemaMigrations', 'migration_id', '001_initial_schema',
     'checksum', 'tampered-checksum');
-  const result = harness.invoke('setupSystem');
+  const result = harness.invokeRaw('setupSystem_');
   expectError(result, 'SCHEMA_ERROR');
   assert.equal(harness.records('SchemaMigrations').length, before.length);
   assert.equal(harness.find('SchemaMigrations', 'migration_id', '001_initial_schema').checksum,
@@ -138,6 +138,11 @@ test('integrity audit passes a healthy datastore and reports raw-sheet corruptio
 
 test('integrity audit identifies duplicate normalized business keys from direct edits', () => {
   const harness = bootstrappedHarness();
+  const auditor = createUser(harness, {
+    suffix: 'duplicate-auditor',
+    email: 'duplicate-auditor@example.com',
+    role: 'ADMIN'
+  });
   const existing = harness.find('Users', 'user_id', 'USR-000001');
   delete existing.__rowNumber;
   harness.invoke('insertRecord_', 'Users', {
@@ -146,6 +151,7 @@ test('integrity audit identifies duplicate normalized business keys from direct 
     email: '  ADMIN@EXAMPLE.COM  '
   });
 
+  harness.setActiveEmail(auditor.email);
   const audit = expectOk(harness.invoke('adminRunIntegrityAudit'));
   const duplicate = Array.from(audit.issues).find((issue) =>
     issue.code === 'DUPLICATE_USER_EMAIL'

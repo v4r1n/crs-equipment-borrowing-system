@@ -1,5 +1,5 @@
-function listEquipment_(query) {
-  var user = requireUser_(true);
+function listEquipment_(query, user) {
+  user = assertUserActor_(user);
   query = query || {};
   var pageQuery = normalizePageQuery_(
     query,
@@ -27,8 +27,8 @@ function listEquipment_(query) {
   return result;
 }
 
-function getEquipmentDetail_(assetId) {
-  var user = requireUser_(true);
+function getEquipmentDetail_(assetId, user) {
+  user = assertUserActor_(user);
   var normalizedId = requireAssetId_(assetId);
   var equipment = findRecordById_(SHEETS.EQUIPMENT, 'asset_id', normalizedId);
   assertApp_(equipment, 'NOT_FOUND', 'ไม่พบอุปกรณ์ที่ต้องการ', null, false);
@@ -47,7 +47,7 @@ function createEquipment_(input, actor) {
   var includedItems = hasOwn_(input, 'included_items')
     ? normalizeIncludedItemsInput_(input.included_items)
     : [];
-  return withAdminMutation_(function (lockedActor) {
+  return withAdminMutation_(actor, function (lockedActor) {
     var spec = operationSpec_(commandId, 'CREATE_ASSET', 'EQUIPMENT', '', {
       equipment: normalized,
       includedItems: includedItems
@@ -123,7 +123,7 @@ function updateEquipment_(input, actor) {
   var includedItems = hasOwn_(input, 'included_items')
     ? normalizeIncludedItemsInput_(input.included_items)
     : null;
-  return withAdminMutation_(function (lockedActor) {
+  return withAdminMutation_(actor, function (lockedActor) {
     var current = findRecordById_(SHEETS.EQUIPMENT, 'asset_id', assetId);
     assertApp_(current, 'NOT_FOUND', 'ไม่พบอุปกรณ์ที่ต้องการแก้ไข', null, false);
     var normalized = normalizeEquipmentInput_(input, current);
@@ -205,7 +205,7 @@ function changeEquipmentStatus_(input, actor) {
   ];
   var newStatus = requireEnum_(input.status, allowed, 'status', 'สถานะ');
   var note = optionalText_(input.note, 'note', 'หมายเหตุ', 2000, true);
-  return withAdminMutation_(function (lockedActor) {
+  return withAdminMutation_(actor, function (lockedActor) {
     var current = findRecordById_(SHEETS.EQUIPMENT, 'asset_id', assetId);
     assertApp_(current, 'NOT_FOUND', 'ไม่พบอุปกรณ์ที่ต้องการ', null, false);
     var spec = operationSpec_(commandId, 'CHANGE_STATUS', 'EQUIPMENT', assetId, {

@@ -1,6 +1,17 @@
-function getAppBootstrap() {
+function executeUserRpc_(idToken, handler) {
   return executeSafely_(function () {
-    var user = requireUser_(true);
+    return handler(requireUser_(idToken));
+  });
+}
+
+function executeAdminRpc_(idToken, handler) {
+  return executeSafely_(function () {
+    return handler(requireAdmin_(idToken));
+  });
+}
+
+function getAppBootstrap(idToken) {
+  return executeUserRpc_(idToken, function (user) {
     var config = getRuntimeConfig_();
     return {
       app: {
@@ -25,220 +36,189 @@ function getAppBootstrap() {
   });
 }
 
-function getDashboard() {
-  return executeSafely_(function () {
-    var user = requireUser_(true);
-    return user.role === USER_ROLE.ADMIN ? getAdminDashboard_() : getUserDashboard_(user);
+function getDashboard(idToken) {
+  return executeUserRpc_(idToken, function (user) {
+    return user.role === USER_ROLE.ADMIN ? getAdminDashboard_(user) : getUserDashboard_(user);
   });
 }
 
-function listEquipment(query) {
-  return executeSafely_(function () {
-    requireUser_(true);
-    return listEquipment_(query || {});
+function listEquipment(idToken, query) {
+  return executeUserRpc_(idToken, function (user) {
+    return listEquipment_(query || {}, user);
   });
 }
 
-function getEquipmentDetail(assetId) {
-  return executeSafely_(function () {
-    requireUser_(true);
-    return getEquipmentDetail_(assetId);
+function getEquipmentDetail(idToken, assetId) {
+  return executeUserRpc_(idToken, function (user) {
+    return getEquipmentDetail_(assetId, user);
   });
 }
 
-function listCategories() {
-  return executeSafely_(function () {
-    requireUser_(true);
+function listCategories(idToken) {
+  return executeUserRpc_(idToken, function () {
     return activeCategoryDtos_();
   });
 }
 
-function createBorrowRequest(input) {
-  return executeSafely_(function () {
-    var actor = requireUser_(true);
+function createBorrowRequest(idToken, input) {
+  return executeUserRpc_(idToken, function (actor) {
     return createBorrowRequest_(input || {}, actor);
   });
 }
 
-function listMyBorrowing(query) {
-  return executeSafely_(function () {
-    var user = requireUser_(true);
+function listMyBorrowing(idToken, query) {
+  return executeUserRpc_(idToken, function (user) {
     return listMyBorrowing_(query || {}, user);
   });
 }
 
-function getBorrowDetail(borrowId) {
-  return executeSafely_(function () {
-    var user = requireUser_(true);
+function getBorrowDetail(idToken, borrowId) {
+  return executeUserRpc_(idToken, function (user) {
     return getBorrowDetail_(borrowId, user);
   });
 }
 
-function requestReturn(input) {
-  return executeSafely_(function () {
-    var actor = requireUser_(true);
+function requestReturn(idToken, input) {
+  return executeUserRpc_(idToken, function (actor) {
     return requestReturn_(input || {}, actor);
   });
 }
 
-function listMyHistory(query) {
-  return executeSafely_(function () {
-    var user = requireUser_(true);
+function listMyHistory(idToken, query) {
+  return executeUserRpc_(idToken, function (user) {
     return listHistoryForUser_(query || {}, user);
   });
 }
 
-function adminGetDashboard() {
-  return executeSafely_(function () {
-    requireAdmin_(true);
-    return getAdminDashboard_();
+function adminGetDashboard(idToken) {
+  return executeAdminRpc_(idToken, function (actor) {
+    return getAdminDashboard_(actor);
   });
 }
 
-function adminListBorrowing(query) {
-  return executeSafely_(function () {
-    requireAdmin_(true);
-    return listBorrowingForAdmin_(query || {});
+function adminListBorrowing(idToken, query) {
+  return executeAdminRpc_(idToken, function (actor) {
+    return listBorrowingForAdmin_(query || {}, actor);
   });
 }
 
-function adminApproveBorrow(input) {
-  return executeSafely_(function () {
-    var actor = requireAdmin_(true);
+function adminApproveBorrow(idToken, input) {
+  return executeAdminRpc_(idToken, function (actor) {
     return approveBorrow_(input || {}, actor);
   });
 }
 
-function adminRejectBorrow(input) {
-  return executeSafely_(function () {
-    var actor = requireAdmin_(true);
+function adminRejectBorrow(idToken, input) {
+  return executeAdminRpc_(idToken, function (actor) {
     return rejectBorrow_(input || {}, actor);
   });
 }
 
-function adminCheckoutBorrow(input) {
-  return executeSafely_(function () {
-    var actor = requireAdmin_(true);
+function adminCheckoutBorrow(idToken, input) {
+  return executeAdminRpc_(idToken, function (actor) {
     return checkoutBorrow_(input || {}, actor);
   });
 }
 
-function adminCompleteReturn(input) {
-  return executeSafely_(function () {
-    var actor = requireAdmin_(true);
+function adminCompleteReturn(idToken, input) {
+  return executeAdminRpc_(idToken, function (actor) {
     return completeReturn_(input || {}, actor);
   });
 }
 
-function adminCreateEquipment(input) {
-  return executeSafely_(function () {
-    var actor = requireAdmin_(true);
+function adminCreateEquipment(idToken, input) {
+  return executeAdminRpc_(idToken, function (actor) {
     return createEquipment_(input || {}, actor);
   });
 }
 
-function adminUpdateEquipment(input) {
-  return executeSafely_(function () {
-    var actor = requireAdmin_(true);
+function adminUpdateEquipment(idToken, input) {
+  return executeAdminRpc_(idToken, function (actor) {
     return updateEquipment_(input || {}, actor);
   });
 }
 
-function adminChangeEquipmentStatus(input) {
-  return executeSafely_(function () {
-    var actor = requireAdmin_(true);
+function adminChangeEquipmentStatus(idToken, input) {
+  return executeAdminRpc_(idToken, function (actor) {
     return changeEquipmentStatus_(input || {}, actor);
   });
 }
 
-function adminUploadEquipmentImage(input) {
-  return executeSafely_(function () {
-    var actor = requireAdmin_(true);
+function adminUploadEquipmentImage(idToken, input) {
+  return executeAdminRpc_(idToken, function (actor) {
     return uploadEquipmentImage_(input || {}, actor);
   });
 }
 
-function adminListUsers(query) {
-  return executeSafely_(function () {
-    requireAdmin_(true);
-    return listUsersForAdmin_(query || {});
+function adminListUsers(idToken, query) {
+  return executeAdminRpc_(idToken, function (actor) {
+    return listUsersForAdmin_(query || {}, actor);
   });
 }
 
-function adminCreateUser(input) {
-  return executeSafely_(function () {
-    var actor = requireAdmin_(true);
+function adminCreateUser(idToken, input) {
+  return executeAdminRpc_(idToken, function (actor) {
     return createUser_(input || {}, actor);
   });
 }
 
-function adminUpdateUser(input) {
-  return executeSafely_(function () {
-    var actor = requireAdmin_(true);
+function adminUpdateUser(idToken, input) {
+  return executeAdminRpc_(idToken, function (actor) {
     return updateUser_(input || {}, actor);
   });
 }
 
-function adminListCategories(query) {
-  return executeSafely_(function () {
-    requireAdmin_(true);
-    return listCategoriesForAdmin_(query || {});
+function adminListCategories(idToken, query) {
+  return executeAdminRpc_(idToken, function (actor) {
+    return listCategoriesForAdmin_(query || {}, actor);
   });
 }
 
-function adminCreateCategory(input) {
-  return executeSafely_(function () {
-    var actor = requireAdmin_(true);
+function adminCreateCategory(idToken, input) {
+  return executeAdminRpc_(idToken, function (actor) {
     return createCategory_(input || {}, actor);
   });
 }
 
-function adminUpdateCategory(input) {
-  return executeSafely_(function () {
-    var actor = requireAdmin_(true);
+function adminUpdateCategory(idToken, input) {
+  return executeAdminRpc_(idToken, function (actor) {
     return updateCategory_(input || {}, actor);
   });
 }
 
-function adminListHistory(query) {
-  return executeSafely_(function () {
-    requireAdmin_(true);
-    return listHistoryForAdmin_(query || {});
+function adminListHistory(idToken, query) {
+  return executeAdminRpc_(idToken, function (actor) {
+    return listHistoryForAdmin_(query || {}, actor);
   });
 }
 
-function adminRunIntegrityAudit() {
-  return executeSafely_(function () {
-    requireAdmin_(true);
-    return runIntegrityAudit_();
+function adminRunIntegrityAudit(idToken) {
+  return executeAdminRpc_(idToken, function (actor) {
+    return runIntegrityAudit_(actor);
   });
 }
 
-function adminListOperations(query) {
-  return executeSafely_(function () {
-    requireAdmin_(true);
-    return listOperationsForAdmin_(query || {});
+function adminListOperations(idToken, query) {
+  return executeAdminRpc_(idToken, function (actor) {
+    return listOperationsForAdmin_(query || {}, actor);
   });
 }
 
-function adminGetOperationDetail(operationId) {
-  return executeSafely_(function () {
-    requireAdmin_(true);
-    return getOperationDetailForAdmin_(operationId);
+function adminGetOperationDetail(idToken, operationId) {
+  return executeAdminRpc_(idToken, function (actor) {
+    return getOperationDetailForAdmin_(operationId, actor);
   });
 }
 
-function adminReconcileOperation(operationId) {
-  return executeSafely_(function () {
-    requireAdmin_(true);
-    return reconcileOperationForAdmin_(operationId);
+function adminReconcileOperation(idToken, operationId) {
+  return executeAdminRpc_(idToken, function (actor) {
+    return reconcileOperationForAdmin_(operationId, actor);
   });
 }
 
-function adminAbortOperation(input) {
-  return executeSafely_(function () {
-    requireAdmin_(true);
-    return abortOperationForAdmin_(input || {});
+function adminAbortOperation(idToken, input) {
+  return executeAdminRpc_(idToken, function (actor) {
+    return abortOperationForAdmin_(input || {}, actor);
   });
 }
 

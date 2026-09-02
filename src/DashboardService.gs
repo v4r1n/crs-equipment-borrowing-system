@@ -1,8 +1,8 @@
 var DASHBOARD_LIST_LIMIT_ = 8;
 var DASHBOARD_DUE_SOON_DAYS_ = 7;
 
-function getAdminDashboard_() {
-  requireAdmin_(false);
+function getAdminDashboard_(actor) {
+  assertAdminActor_(actor);
   var cacheKey = 'dashboard:admin:v1';
   var cacheEpoch = getCacheEpoch_();
   var cached = cacheGetJson_(cacheKey, cacheEpoch);
@@ -70,11 +70,7 @@ function getAdminDashboard_() {
 }
 
 function getUserDashboard_(user) {
-  var sessionUser = requireUser_(false);
-  if (user) {
-    assertApp_(user.user_id === sessionUser.user_id, 'FORBIDDEN',
-      'คุณไม่มีสิทธิ์ดูข้อมูลแดชบอร์ดของผู้ใช้อื่น', null, false);
-  }
+  var sessionUser = assertUserActor_(user);
   var cacheKey = 'dashboard:user:' + sessionUser.user_id + ':v1';
   var cacheEpoch = getCacheEpoch_();
   var cached = cacheGetJson_(cacheKey, cacheEpoch);

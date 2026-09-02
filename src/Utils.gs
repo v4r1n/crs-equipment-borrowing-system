@@ -20,15 +20,27 @@ function normalizeDomain_(value) {
   return normalizeWhitespace_(value).replace(/^@/, '').toLowerCase();
 }
 
+function isSafeDomainValue_(value) {
+  var domain = normalizeDomain_(value);
+  return domain.length <= 253 &&
+    /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(domain);
+}
+
 function normalizeSerial_(value) {
   return normalizeWhitespace_(value).toLowerCase();
 }
 
 function isEmailInDomain_(email, domain) {
   var normalizedDomain = normalizeDomain_(domain);
-  if (!normalizedDomain) return true;
+  if (!normalizedDomain) return false;
   var parts = normalizeEmail_(email).split('@');
   return parts.length === 2 && parts[1] === normalizedDomain;
+}
+
+function isEmailInAllowedDomains_(email, domains) {
+  return Array.isArray(domains) && domains.length > 0 && domains.some(function (domain) {
+    return isEmailInDomain_(email, domain);
+  });
 }
 
 function sanitizeSheetText_(value) {

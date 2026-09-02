@@ -7,6 +7,8 @@ const harnessDirectory = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(harnessDirectory, '..', '..', '..');
 const sourceDirectory = path.join(projectRoot, 'src');
 const port = Number(process.env.CRS_TEST_PORT || 4173);
+const testGoogleOAuthClientId =
+  '123456789012-crsequipmenttest.apps.googleusercontent.com';
 
 function readUtf8(filePath) {
   return fs.readFileSync(filePath, 'utf8');
@@ -54,6 +56,15 @@ function replaceBootstrapScript(markup, bootstrapScript) {
   return markup.replace(externalBootstrap, `<script>\n${bootstrapScript}\n</script>`);
 }
 
+function removeGoogleIdentityScript(markup) {
+  const externalGoogleIdentity = /\s*<script\b[^>]*\bsrc=["']https:\/\/accounts\.google\.com\/gsi\/client["'][^>]*>\s*<\/script>/gi;
+  if (!externalGoogleIdentity.test(markup)) {
+    throw new Error('Could not find the Google Identity Services script in src/index.html');
+  }
+  externalGoogleIdentity.lastIndex = 0;
+  return markup.replace(externalGoogleIdentity, '');
+}
+
 function assembleApplication(requestUrl) {
   const initialView = requestUrl.searchParams.get('view') || 'dashboard';
   const initialAssetId = requestUrl.searchParams.get('id') || requestUrl.searchParams.get('asset_id') || '';
@@ -64,8 +75,10 @@ function assembleApplication(requestUrl) {
   let markup = readUtf8(path.join(sourceDirectory, 'index.html'));
   markup = markup
     .replace(/<\?=\s*initialView\s*\?>/g, escapeAttribute(initialView))
-    .replace(/<\?=\s*initialAssetId\s*\?>/g, escapeAttribute(initialAssetId));
+    .replace(/<\?=\s*initialAssetId\s*\?>/g, escapeAttribute(initialAssetId))
+    .replace(/<\?=\s*googleOAuthClientId\s*\?>/g, escapeAttribute(testGoogleOAuthClientId));
   markup = removeExternalStyles(markup);
+  markup = removeGoogleIdentityScript(markup);
   markup = markup.replace('</head>', [
     `<style data-test-bootstrap-lite>\n${bootstrapCss}\n</style>`,
     `<script data-test-browser-environment>\n${browserEnvironment}\n</script>`,

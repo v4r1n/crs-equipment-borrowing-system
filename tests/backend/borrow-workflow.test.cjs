@@ -203,7 +203,7 @@ test('a stalled operation reserves an asset before a Borrow row exists', () => {
   const equipment = createEquipment(harness, { suffix: 'reservation' });
   harness.setActiveEmail(borrower.email);
 
-  const actor = harness.invoke('requireUser_', false);
+  const actor = harness.invokeRaw('requireUser_', harness.state.idToken);
   const payload = {
     assetId: equipment.asset_id,
     borrowDate: '2000-01-01',

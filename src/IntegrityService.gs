@@ -10,9 +10,8 @@ var INTEGRITY_ID_PATTERNS_ = Object.freeze({
   History: /^LOG-\d{6}$/
 });
 
-function runIntegrityAudit_() {
-  return withScriptLock_(function () {
-    var actor = requireAdmin_(false);
+function runIntegrityAudit_(actor) {
+  return withAdminMutation_(actor, function (lockedActor) {
     var tables = {};
     Object.keys(SHEET_SCHEMAS).forEach(function (sheetName) {
       tables[sheetName] = listRecords_(sheetName);
@@ -37,7 +36,7 @@ function runIntegrityAudit_() {
     });
     return {
       generated_at: nowIso_(),
-      generated_by: stripSheetEscape_(actor.email),
+      generated_by: stripSheetEscape_(lockedActor.email),
       passed: state.errors === 0,
       summary: {
         total_issues: state.total,

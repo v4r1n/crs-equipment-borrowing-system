@@ -14,7 +14,136 @@
     }
   }
 
-  function invoke(method, args) {
+  const authState = {
+    idToken: '',
+    initialized: false,
+    initialization: null,
+    credentialPromise: null,
+    credentialResolve: null
+  };
+
+  function oauthClientId() {
+    return String(document.body && document.body.dataset.googleOauthClientId || '').trim();
+  }
+
+  function showGoogleSignIn(message) {
+    const splash = document.querySelector('#app-splash');
+    const shell = document.querySelector('#app-shell');
+    const access = document.querySelector('#access-state');
+    if (splash) splash.hidden = true;
+    if (shell) shell.hidden = true;
+    if (access) access.hidden = false;
+    const title = access && access.querySelector('[data-access-title]');
+    const detail = access && access.querySelector('[data-access-message]');
+    const requestId = access && access.querySelector('[data-access-request-id]');
+    if (title) title.textContent = 'ลงชื่อเข้าใช้ด้วย Google';
+    if (detail) detail.textContent = message ||
+      'เลือกบัญชี Google ที่ได้รับอนุญาตให้ใช้ระบบ';
+    if (requestId) requestId.textContent = '';
+  }
+
+  function waitForGoogleIdentity() {
+    if (global.google && google.accounts && google.accounts.id) {
+      return Promise.resolve(google.accounts.id);
+    }
+    return new Promise(function (resolve, reject) {
+      const startedAt = Date.now();
+      const timer = global.setInterval(function () {
+        if (global.google && google.accounts && google.accounts.id) {
+          global.clearInterval(timer);
+          resolve(google.accounts.id);
+          return;
+        }
+        if (Date.now() - startedAt >= 15000) {
+          global.clearInterval(timer);
+          reject(new ClientApiError({
+            code: 'AUTH_CLIENT_UNAVAILABLE',
+            message: 'โหลดระบบลงชื่อเข้าใช้ Google ไม่สำเร็จ กรุณาตรวจอินเทอร์เน็ตแล้วลองใหม่',
+            retryable: true
+          }));
+        }
+      }, 100);
+    });
+  }
+
+  function receiveGoogleCredential(response) {
+    const credential = response && typeof response.credential === 'string'
+      ? response.credential.trim()
+      : '';
+    if (!credential) return;
+    authState.idToken = credential;
+    if (authState.credentialResolve) authState.credentialResolve(credential);
+    authState.credentialPromise = null;
+    authState.credentialResolve = null;
+  }
+
+  function initializeGoogleIdentity() {
+    if (authState.initialized) return Promise.resolve();
+    if (authState.initialization) return authState.initialization;
+    authState.initialization = waitForGoogleIdentity().then(function (identityApi) {
+      const clientId = oauthClientId();
+      if (!clientId) {
+        throw new ClientApiError({
+          code: 'CONFIG_ERROR',
+          message: 'ระบบยังไม่ได้ตั้งค่า Google OAuth Client ID กรุณาติดต่อผู้ดูแลระบบ',
+          retryable: false
+        });
+      }
+      identityApi.initialize({
+        client_id: clientId,
+        callback: receiveGoogleCredential,
+        auto_select: false,
+        ux_mode: 'popup',
+        use_fedcm_for_button: false
+      });
+      const button = document.querySelector('#google-signin-button');
+      if (!button) {
+        throw new ClientApiError({
+          code: 'CLIENT_ENVIRONMENT',
+          message: 'ไม่พบส่วนลงชื่อเข้าใช้ กรุณาโหลดหน้าใหม่',
+          retryable: true
+        });
+      }
+      button.replaceChildren();
+      identityApi.renderButton(button, {
+        type: 'standard',
+        theme: 'outline',
+        size: 'large',
+        text: 'signin_with',
+        shape: 'rectangular',
+        logo_alignment: 'left',
+        locale: 'th'
+      });
+      authState.initialized = true;
+    }).catch(function (error) {
+      authState.initialization = null;
+      throw error;
+    });
+    return authState.initialization;
+  }
+
+  function getIdToken() {
+    if (authState.idToken) return Promise.resolve(authState.idToken);
+    showGoogleSignIn();
+    return initializeGoogleIdentity().then(function () {
+      if (authState.idToken) return authState.idToken;
+      if (!authState.credentialPromise) {
+        authState.credentialPromise = new Promise(function (resolve) {
+          authState.credentialResolve = resolve;
+        });
+      }
+      return authState.credentialPromise;
+    });
+  }
+
+  function clearIdToken(expectedToken) {
+    if (expectedToken && authState.idToken !== expectedToken) return false;
+    authState.idToken = '';
+    return true;
+  }
+
+  async function invoke(method, args) {
+    const idToken = await getIdToken();
     return new Promise(function (resolve, reject) {
       if (!global.google || !google.script || !google.script.run) {
         reject(new ClientApiError({
@@ -30,6 +159,16 @@
             resolve(response.data);
             return;
           }
+          const errorCode = response && response.error && response.error.code;
+          const identityRejected = errorCode === 'UNAUTHENTICATED' ||
+            (method === 'getAppBootstrap' &&
+              (errorCode === 'FORBIDDEN' || errorCode === 'USER_DISABLED'));
+          if (identityRejected) {
+            const clearedCurrentToken = clearIdToken(idToken);
+            if (clearedCurrentToken && method !== 'getAppBootstrap') {
+              global.dispatchEvent(new CustomEvent('crs:authentication-required'));
+            }
+          }
           reject(new ClientApiError(
             response && response.error,
             response && response.meta && response.meta.requestId
@@ -44,7 +183,7 @@
           }));
         });
       try {
-        runner[method].apply(runner, args || []);
+        runner[method].apply(runner, [idToken].concat(args || []));
       } catch (error) {
         reject(new ClientApiError({
           code: 'CLIENT_ERROR',
@@ -63,6 +202,11 @@
 
   global.CRS = global.CRS || {};
   global.CRS.ClientApiError = ClientApiError;
+  global.CRS.auth = Object.freeze({
+    getIdToken: getIdToken,
+    clearIdToken: clearIdToken,
+    showGoogleSignIn: showGoogleSignIn
+  });
   global.CRS.api = Object.freeze({
     getAppBootstrap: endpoint('getAppBootstrap'),
     getDashboard: endpoint('getDashboard'),

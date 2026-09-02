@@ -13,7 +13,7 @@ function getSpreadsheet_() {
 
 function getSheetOrThrow_(sheetName) {
   var sheet = getSpreadsheet_().getSheetByName(sheetName);
-  assertApp_(sheet, 'CONFIG_ERROR', 'ไม่พบชีต ' + sheetName + ' กรุณารัน setupSystem()', null, false);
+  assertApp_(sheet, 'CONFIG_ERROR', 'ไม่พบชีต ' + sheetName + ' กรุณารัน setupSystem_()', null, false);
   return sheet;
 }
 

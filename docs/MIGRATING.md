@@ -41,7 +41,7 @@ Migration `002_operation_journal_and_required_items` upgrades schema version 1 t
 
 1. Stop web-app mutations and export a backup of the spreadsheet, especially BorrowItems, IncludedItems, History, and SchemaMigrations.
 2. Deploy source that contains all three immutable definitions; do not edit a recorded checksum.
-3. Sign in with the configured Workspace admin and run `setupSystem()` once. Its raw preflight validates every existing migration ID/checksum before locale, headers, formatting, protection, or data are changed.
+3. Sign in with a configured Admin whose exact domain is in `ALLOWED_DOMAINS` (or legacy `ALLOWED_DOMAIN`) and run the private editor function `setupSystem_()` once. Its raw preflight validates every existing migration ID/checksum before locale, headers, formatting, protection, or data are changed.
 4. Setup creates the missing Operations sheet and appends the missing BorrowItems header without reordering or deleting existing columns/rows.
 5. Before recording 002, setup backfills blank BorrowItems `is_required` from the referenced IncludedItems definition. If the old snapshot points to a missing definition, it defaults to `true` as the fail-safe return rule.
 6. Before recording 003, setup concatenates the existing result chunks of every `COMPLETED` operation, rejects invalid JSON, and backfills its SHA-256 Base64URL `result_hash`. `STARTED` rows remain pending and are not assigned a result hash.

@@ -119,3 +119,23 @@ Because Google does not guarantee that Active User email is available in every e
 Releases edit the existing deployment to point to a new immutable Apps Script version. This preserves the deployment ID and `/exec` URL used by printed QR stickers. Only a canonical `https://script.google.com/macros/s/.../exec` URL matching the service-reported deployment may become the QR base; `/dev`, redirect hosts, arbitrary HTTPS origins, and different deployments fail closed.
 
 The deployer account and deployment record are operational dependencies: versioned deployment ownership is not assumed to transfer safely when an employee account is removed. Code/manifest versions do not snapshot project-wide Script Properties or datastore state, so rollback also requires a separately controlled property baseline and schema compatibility review.
+
+## ADR-017 — Verified Google ID tokens for multi-domain accounts
+
+Status: Accepted — 2026-09-01
+
+This decision supersedes the visitor-identity and domain-access portions of ADR-008 and ADR-016; their datastore isolation, versioned deployment, stable URL, and operational ownership decisions remain in force.
+
+The browser uses Google Identity Services with an organization-controlled Web OAuth Client ID and passes the returned ID token as the first argument of every application RPC. The backend validates the RS256 signature against Google's rotating JWKS, issuer, audience/authorized party, issued/not-before/expiry times, subject, verified email, and authoritative-email rule before looking up authorization. It never treats `Session.getActiveUser()`, `Session.getEffectiveUser()`, a decoded-but-unverified JWT, or a browser-supplied email/role as visitor identity. Missing, malformed, invalid, expired, or wrongly-audienced tokens fail closed.
+
+`ALLOWED_DOMAINS` is an exact comma-separated allowlist and takes precedence when non-empty; deployments that have not migrated retain compatibility through the singular `ALLOWED_DOMAIN` fallback. Gmail is accepted only for `@gmail.com` with `email_verified=true`. A Workspace/non-Gmail identity additionally requires an `hd` claim equal to the email domain. No subdomain, alias, consumer account using a third-party address, or other domain is implied. Verified identity is necessary but insufficient: exactly one matching Users row must exist and be `ACTIVE`, and each Admin action rechecks the current `ADMIN` role. Visitor auto-provisioning is disabled.
+
+The versioned Web app continues to execute as the organization-controlled deployer (`USER_DEPLOYING`) so visitors receive no direct Sheet or Drive permission. Its access changes from `DOMAIN` to `ANYONE`, which Apps Script defines as any logged-in Google user; `ANYONE_ANONYMOUS` is prohibited. This Google login gate does not replace application authentication or authorization, and every RPC still requires a valid ID token.
+
+The manifest adds `script.external_request` solely so the backend can retrieve Google's rotating signing keys. `GOOGLE_OAUTH_CLIENT_ID` is a Script Property and is never committed with credentials or resource IDs. The GIS client requests only basic sign-in identity; the deployer's Apps Script Drive/Sheets authorization is a separate trust boundary.
+
+Apps Script HTML Service renders active client code inside a sandboxed iframe, while a Google Web OAuth Client accepts exact Authorized JavaScript origins without wildcards. Production rollout must therefore observe and register the exact iframe origin used by the `/exec` deployment and test it with both Workspace and Gmail identities across supported browser/device profiles. If that origin is not stable or cannot be registered, rollout stops; moving the sign-in surface to a stable organization-controlled origin requires a new architecture review.
+
+Image authorization remains independent of app authorization. `DOMAIN_WITH_LINK` cannot serve external Gmail users and is broader than the Users sheet for same-domain link holders. `ANYONE_WITH_LINK` supports external viewers but makes the image readable by anyone with its URL, without an ID token or Users row, so it requires explicit data-classification approval. Neither sharing change applies retroactively to existing files.
+
+For backward compatibility, application authorization remains keyed by the verified email stored in Users; the verified Google `sub` is checked for presence but is not persisted in schema v3. An organization that renames or reassigns an email address must inactivate/review the old Users row before the new account can sign in. Persisting and binding `google_sub` requires an additive migration and explicit first-bind/recovery policy, and is reserved as a future hardening decision.

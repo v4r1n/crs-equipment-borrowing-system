@@ -14,12 +14,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Security, performance, coding, and phase-end project conventions.
 - Initial migration guide and architectural decision log.
 - Apps Script V8 manifest and centralized deployment configuration with Script Property overrides.
-- Idempotent `setupSystem()` for all eleven Sheets, formatting, warning protection, default categories, settings, sequences, migrations, and bootstrap admins.
+- Idempotent private editor function `setupSystem_()` for all eleven Sheets, formatting, warning protection, default categories, settings, sequences, migrations, and bootstrap admins.
 - Header-based bulk repository with grid growth, partial updates, immutable primary keys, serialization, and best-effort cache helpers.
 - Lock-safe collision-resistant ID allocation and recovery for assets, borrows, users, categories, items, and logs.
 - Immutable migration ledger with pre-mutation checksum validation and duplicate-data preflight.
 - Shared Thai-safe errors, validation, date/overdue, normalization, formula-injection, and QR URL utilities.
-- Fail-closed Google Workspace session authentication, active-user/admin authorization, optional deterministic user provisioning, and role-specific response DTOs.
+- Fail-closed authentication and active-user/admin authorization with role-specific response DTOs.
 - Guarded RPC surface for dashboard, equipment, borrowing, history, users, categories, image upload, integrity audit, and operation recovery.
 - Equipment, included-item, borrow approval/checkout/return, user, category, dashboard, history, and Google Drive image services with optimistic row versions.
 - Durable Operations journal with payload/result hashes, exact source-or-target replay, admin reconciliation, pending-entity reservations, and evidence-based terminal abort for untouched image uploads.
@@ -36,8 +36,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Mobile-first QR image capture/file scanning, strict canonical payload validation, manual Asset ID fallback, route cleanup, and exact-asset Admin borrowing handoff.
 - Deterministic Node test harnesses for Apps Script services and source/security contracts, plus an offline Playwright HTML-service harness with responsive acceptance at 320, 768, and 1440 pixels.
 - Automated coverage for the complete borrow/return lifecycle, double booking, permissions, overdue projection, duplicate IDs and business keys, setup/migration integrity, QR browser actions, Thai error states, and Admin scan handoff.
-- Phase 7 step-by-step Google Workspace deployment guide covering all 43 runtime files, Script Properties, first-admin bootstrap, authorization, domain-only Web app publication, User/Admin acceptance, stable-URL upgrades, rollback, backups, monitoring, quotas, and troubleshooting.
-- Production sign-off guidance for same-domain Active User identity, Drive image sharing, physical QR scanning, native mobile capture, deployed HTML-service behavior, and organization-owned evidence.
+- Phase 7 step-by-step Google Workspace deployment guide covering the complete runtime inventory, Script Properties, first-admin bootstrap, authorization, Web app publication, User/Admin acceptance, stable-URL upgrades, rollback, backups, monitoring, quotas, and troubleshooting.
+- Production sign-off guidance for Google Identity Services, Workspace/Gmail ID-token verification, iframe-origin compatibility, Drive image sharing, physical QR scanning, native mobile capture, deployed HTML-service behavior, and organization-owned evidence.
+- Google Identity Services client integration plus backend Google ID-token verification against rotating JWKS, including signature, issuer, audience, authorized-party, time, subject, verified-email, Gmail, and Workspace hosted-domain checks.
+- Multi-domain configuration through `ALLOWED_DOMAINS` with backward-compatible `ALLOWED_DOMAIN` fallback and deployment-only `GOOGLE_OAUTH_CLIENT_ID` Script Property.
+- Automated authentication coverage for Workspace and Gmail users, invalid domains, invalid/expired tokens, inactive accounts, absent token, and role escalation attempts.
 - Automated deployment-runbook contract that keeps all runtime filenames, configuration keys, and eleven required rollout steps synchronized with source.
 - Setup preflight coverage for invalid image-sharing policy, inaccessible Drive folders, `/dev` URLs, and mismatched Web app deployments.
 
@@ -53,17 +56,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Mark the seven-phase source as a release candidate while keeping live Workspace deployment and acceptance explicitly unsigned until the organization completes them.
 - Restrict server QR bases to the canonical current Apps Script `/exec` deployment and reject development, redirect, external, credential-bearing, query/fragment, and mismatched deployment URLs.
 - Preflight configured Drive folder access, image-sharing mode, and Web app URL before setup creates or migrates managed sheets; normalize Drive policy failures to `DRIVE_SHARING_FAILED`.
+- Change the Web app topology from domain-only Session identity to `USER_DEPLOYING` + `ANYONE` (logged-in Google Accounts) while retaining private Sheet/Drive ACLs and stable versioned `/exec` upgrades.
+- Make `setupSystem_` an editor-only private helper rather than a callable application RPC.
 
 ### Security
 
-- Re-authorize every mutation from the current Users row inside the Script Lock; blank, external, unknown, inactive, or insufficient-role identities fail closed.
-- Restrict first setup to configured same-domain admins and subsequent setup runs to currently active admins, with authorization checked inside the setup lock.
+- Re-authorize every mutation from the current Users row inside the Script Lock; missing/invalid/expired tokens, disallowed domains, unknown/inactive users, and insufficient roles fail closed.
+- Restrict first setup to configured allowlisted-domain admins and subsequent setup runs to currently active admins, with authorization checked inside the setup lock.
 - Redact procurement, Drive file, active-workflow, and staff audit fields from non-admin equipment/borrowing responses.
 - Escape dynamic client markup, allowlist routes/includes and Drive thumbnail URLs, gate admin routes in the client, and re-authorize every admin operation on the server.
 - Prevent an active admin from changing the email of their own signed-in Users row, avoiding identity orphaning; another admin may perform the controlled change.
 - Keep scan images local, reject external/malformed/ambiguous QR payloads, and avoid permission-sensitive live-camera APIs inside the Apps Script HTML-service sandbox.
 - Remove the internal error constructor from the callable Apps Script surface by renaming it `AppError_`; automated contracts now fail if an unreviewed public server function appears.
-- Freeze the production topology to an organization-controlled deployer, domain-only access, same-domain identity pilot, private datastore ACLs, and stable versioned `/exec` deployment; public/anonymous access is not an identity workaround.
-- Pin the manifest to the exact Drive, Sheets, and Active User email OAuth scopes, and document the same-domain image-link boundary, non-retroactive sharing, restricted project editors, and project-wide property rollback risk.
+- Freeze the production topology to an organization-controlled deployer, logged-in-account access (`ANYONE`, never `ANYONE_ANONYMOUS`), verified Google ID tokens, private datastore ACLs, and a stable versioned `/exec` deployment.
+- Pin the manifest to Drive, Sheets, deployer email, and `script.external_request` for Google JWKS; document the exact HTML-service iframe-origin pilot, external-account image-link boundary, non-retroactive sharing, restricted project editors, and project-wide property rollback risk.
+- Require exactly one active Users row and current server-side role for every request; verified Google identity never auto-provisions or grants application privilege.
+- Cache Google's JWKS in its validated document shape while honoring `Cache-Control: max-age`/`Age`, including immediate no-cache responses; treat cache failures as non-fatal and reject unknown key IDs against a fresh key set without attacker-triggered refresh loops.
+- Compare-and-clear only the ID token that a rejected RPC actually used, then require a fresh credential and full bootstrap before restoring the application shell after expiry.
 
 [Unreleased]: https://github.com/v4r1n/crs-equipment-borrowing-system/compare/main...codex/initial-v1

@@ -43,7 +43,7 @@ function nextIdsLocked_(sequenceName, count) {
     'VALIDATION_FAILED', 'จำนวน ID ที่ต้องการไม่ถูกต้อง', null, false);
   if (!requested) return [];
   var sequence = findRecordByField_(SHEETS.SEQUENCES, 'sequence_name', sequenceName, false);
-  assertApp_(sequence, 'CONFIG_ERROR', 'ไม่พบลำดับ ID กรุณารัน setupSystem()', null, false);
+  assertApp_(sequence, 'CONFIG_ERROR', 'ไม่พบลำดับ ID กรุณารัน setupSystem_()', null, false);
   var candidateNumber = Number(sequence.next_value);
   assertApp_(Number.isSafeInteger(candidateNumber) && candidateNumber > 0,
     'SCHEMA_ERROR', 'ค่า sequence ไม่ถูกต้อง: ' + sequenceName, null, false);

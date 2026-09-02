@@ -54,10 +54,15 @@ test('all server, browser, and manifest sources compile', () => {
   const manifest = JSON.parse(read('src/appsscript.json'));
   assert.deepEqual(manifest.oauthScopes, [
     'https://www.googleapis.com/auth/drive',
+    'https://www.googleapis.com/auth/script.external_request',
     'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/userinfo.email',
   ]);
-  assert.equal(serverFiles.length, 23);
+  assert.deepEqual(manifest.webapp, {
+    access: 'ANYONE',
+    executeAs: 'USER_DEPLOYING',
+  });
+  assert.equal(serverFiles.length, 24);
   assert.equal(browserFiles.length, 9);
 });
 
@@ -66,7 +71,7 @@ test('deployment runbook covers every runtime file, config key, and requested st
   const runtimeFiles = fs.readdirSync(SRC)
     .filter((file) => /\.(?:gs|html|json)$/.test(file))
     .sort();
-  assert.equal(runtimeFiles.length, 43);
+  assert.equal(runtimeFiles.length, 44);
   for (const file of runtimeFiles) {
     const escapedFile = file.replaceAll('.', '\\.');
     assert.match(guide, new RegExp(`\\b${escapedFile}\\b`),
@@ -124,7 +129,6 @@ test('server exposes only the guarded RPCs and deliberate Apps Script entry poin
     'listMyBorrowing',
     'listMyHistory',
     'requestReturn',
-    'setupSystem',
   ];
   const actual = [];
   for (const file of sourceFiles('.gs')) {
@@ -136,21 +140,39 @@ test('server exposes only the guarded RPCs and deliberate Apps Script entry poin
   assert.deepEqual(actual.sort(), expected.sort());
 
   const api = read('src/Api.gs');
-  const declarations = [...api.matchAll(/^function\s+([A-Za-z_$][\w$]*)\s*\(/gm)];
+  const declarations = [...api.matchAll(
+    /^function\s+([A-Za-z_$][\w$]*)\s*\(([^)]*)\)/gm,
+  )];
   declarations.forEach((declaration, index) => {
     const name = declaration[1];
     if (name.endsWith('_')) return;
+    const parameters = declaration[2].split(',').map((parameter) => parameter.trim()).filter(Boolean);
+    assert.equal(parameters[0], 'idToken', `${name} must receive its Google ID token first`);
     const end = declarations[index + 1] ? declarations[index + 1].index : api.length;
     const body = api.slice(declaration.index, end);
-    assert.match(body, /return executeSafely_\s*\(/, `${name} must use executeSafely_`);
-    assert.match(
-      body,
-      name.startsWith('admin') ? /requireAdmin_\s*\(/ : /requireUser_\s*\(/,
-      `${name} must enforce its server-side role`,
-    );
+    const executor = name.startsWith('admin') ? 'executeAdminRpc_' : 'executeUserRpc_';
+    assert.match(body, new RegExp(`return ${executor}\\s*\\(\\s*idToken\\s*,`),
+      `${name} must use its token-verified role executor`);
   });
-  assert.doesNotMatch(sourceFiles('.gs').map((file) =>
-    fs.readFileSync(path.join(SRC, file), 'utf8')).join('\n'), /Session\.getEffectiveUser\s*\(/);
+  assert.match(api,
+    /function executeUserRpc_\s*\(idToken, handler\)[\s\S]*?executeSafely_\s*\([\s\S]*?requireUser_\s*\(idToken\)/);
+  assert.match(api,
+    /function executeAdminRpc_\s*\(idToken, handler\)[\s\S]*?executeSafely_\s*\([\s\S]*?requireAdmin_\s*\(idToken\)/);
+  assert.match(read('src/Auth.gs'),
+    /function requireUser_\s*\(idToken\)[\s\S]*?verifyGoogleIdToken_\s*\(idToken\)/);
+  const allServerSource = sourceFiles('.gs').map((file) =>
+    fs.readFileSync(path.join(SRC, file), 'utf8')).join('\n');
+  assert.doesNotMatch(allServerSource, /Session\.getEffectiveUser\s*\(/);
+  assert.doesNotMatch(
+    ['src/Api.gs', 'src/Auth.gs', 'src/IdentityService.gs'].map(read).join('\n'),
+    /Session\.getActiveUser\s*\(/,
+    'visitor identity must come only from a verified Google ID token',
+  );
+  assert.match(read('src/Setup.gs'), /^function setupSystem_\s*\(/m,
+    'editor-only setup must be private from google.script.run');
+  assert.doesNotMatch(read('src/Setup.gs'), /^function setupSystem\s*\(/m);
+  assert.match(read('src/Config.gs'), /GOOGLE_OAUTH_CLIENT_ID:\s*''/,
+    'the OAuth client ID must be supplied through Script Properties');
 });
 
 test('include and route registries exactly match their source consumers', () => {
@@ -368,4 +390,40 @@ test('project-authored markup keeps the QR scanner passive and HTML safe', () =>
   assert.doesNotMatch(authored, /\son[a-z]+\s*=/i);
   assert.doesNotMatch(authored, /javascript\s*:/i);
   assert.match(read('src/scripts-qr.html'), /\.scanFile\s*\(/);
+});
+
+test('Google Identity Services is configured without a source-controlled credential', () => {
+  const index = read('src/index.html');
+  const api = read('src/scripts-api.html');
+  const serverIdentity = read('src/IdentityService.gs');
+  const authoredRuntime = [
+    ...sourceFiles('.gs').map((file) => read(`src/${file}`)),
+    ...sourceFiles('.html')
+      .filter((file) => !file.startsWith('vendor-'))
+      .map((file) => read(`src/${file}`)),
+  ].join('\n');
+
+  assert.match(index,
+    /<script\b[^>]*src=["']https:\/\/accounts\.google\.com\/gsi\/client["'][^>]*>/i);
+  assert.match(index, /data-google-oauth-client-id=["']<\?=\s*googleOAuthClientId\s*\?>["']/);
+  assert.match(read('src/Code.gs'),
+    /template\.googleOAuthClientId\s*=\s*getRuntimeConfig_\(\)\.GOOGLE_OAUTH_CLIENT_ID/);
+  assert.match(api, /identityApi\.initialize\s*\(/);
+  assert.match(api, /identityApi\.renderButton\s*\(/);
+  assert.match(api, /\[idToken\]\.concat\s*\(\s*args\s*\|\|\s*\[\]\s*\)/,
+    'the browser API adapter must prepend a token to every RPC');
+  assert.doesNotMatch(authoredRuntime,
+    /[0-9]{6,}-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com/,
+    'a concrete Google OAuth client ID must never be committed to runtime source');
+
+  assert.match(serverIdentity,
+    /https:\/\/www\.googleapis\.com\/oauth2\/v3\/certs/);
+  assert.match(serverIdentity, /header\.alg\s*===\s*'RS256'/);
+  assert.match(serverIdentity, /claims\.iss\s*===\s*'accounts\.google\.com'/);
+  assert.match(serverIdentity, /claims\.aud/);
+  assert.match(serverIdentity, /claims\.exp\s*>\s*nowSeconds/);
+  assert.match(serverIdentity, /claims\.email_verified\s*===\s*true/);
+  assert.match(serverIdentity, /normalizeDomain_\(claims\.hd\)/);
+  assert.doesNotMatch(serverIdentity, /tokeninfo/i,
+    'production verification must validate the signed JWT rather than call tokeninfo');
 });

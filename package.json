@@ -1,6 +1,6 @@
 {
   "name": "crs-equipment-borrowing-system",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Local automated acceptance tests for the Google Apps Script equipment borrowing system.",
   "scripts": {

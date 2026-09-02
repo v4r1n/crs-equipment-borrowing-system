@@ -41,7 +41,7 @@ function uploadEquipmentImage_(input, actor) {
   var newFile = null;
   var resourceStored = false;
   try {
-    return withAdminMutation_(function (lockedActor) {
+    return withAdminMutation_(actor, function (lockedActor) {
       var current = findRecordById_(SHEETS.EQUIPMENT, 'asset_id', assetId);
       assertApp_(current, 'NOT_FOUND', 'ไม่พบอุปกรณ์ที่ต้องการอัปโหลดภาพ', null, false);
       var spec = operationSpec_(commandId, 'UPLOAD_ASSET_IMAGE', 'EQUIPMENT', assetId, {

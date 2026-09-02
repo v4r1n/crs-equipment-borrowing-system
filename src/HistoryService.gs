@@ -35,8 +35,8 @@ function assertOperationMatch_(history, action, entityType, entityId) {
   return true;
 }
 
-function listHistoryForAdmin_(query) {
-  requireAdmin_(true);
+function listHistoryForAdmin_(query, actor) {
+  assertAdminActor_(actor);
   query = query || {};
   var pageQuery = normalizePageQuery_(
     query,
@@ -54,6 +54,7 @@ function listHistoryForAdmin_(query) {
 }
 
 function listHistoryForUser_(query, user) {
+  user = assertUserActor_(user);
   query = query || {};
   var borrowIds = Object.create(null);
   listRecords_(SHEETS.BORROW).forEach(function (borrow) {

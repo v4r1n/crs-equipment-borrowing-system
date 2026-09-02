@@ -8,9 +8,11 @@
 
 ```mermaid
 flowchart LR
-  U[User/Admin browser] -->|HTTPS| H[Apps Script HTML Service SPA]
-  H -->|google.script.run| A[Guarded RPC API]
-  A --> G[Auth + validation]
+  U[User/Admin browser] -->|Sign in| GIS[Google Identity Services]
+  U -->|HTTPS| H[Apps Script HTML Service SPA]
+  GIS -->|Google ID token| H
+  H -->|google.script.run + ID token| A[Guarded RPC API]
+  A -->|Verify signature/claims via JWKS| G[Auth + validation]
   G --> S[Domain services and state machine]
   S --> R[Header-based repositories]
   R --> DB[(Google Sheets)]
@@ -23,13 +25,13 @@ flowchart LR
 
 `index.html` เป็น shell เดียวและ include เฉพาะ partial ใน allowlist ตอน render เพื่อหลีกเลี่ยงข้อจำกัดหลายหน้าของ Apps Script หน้าเว็บแยก view templates ออกจาก controllers, จัด route ด้วย `google.script.history`/`google.script.url`, และใช้ view token ป้องกัน response เก่าเขียนทับหน้าใหม่
 
-ทุก server call ผ่าน Promise wrapper ของ `google.script.run` และแปล envelope/error เป็น client error แบบเดียว ส่วน mutation สร้าง command ID ก่อนส่งและเก็บใน `sessionStorage` พร้อม fingerprint ของ payload เพื่อให้ retry หลังผลลัพธ์ไม่แน่ชัดใช้คำสั่งเดิมเท่านั้น ทุก action มี loading, success/error ภาษาไทย, field feedback และ confirmation ตามความเสี่ยง
+ทุก server call ผ่าน Promise wrapper ของ `google.script.run`, แนบ Google ID token ที่ Google Identity Services คืนให้ และแปล envelope/error เป็น client error แบบเดียว Token อยู่ในหน่วยความจำของหน้า ไม่ใช่ identity assertion ที่ backend เชื่อโดยตรง ส่วน mutation สร้าง command ID ก่อนส่งและเก็บใน `sessionStorage` พร้อม fingerprint ของ payload เพื่อให้ retry หลังผลลัพธ์ไม่แน่ชัดใช้คำสั่งเดิมเท่านั้น ทุก action มี loading, success/error ภาษาไทย, field feedback และ confirmation ตามความเสี่ยง
 
 QR controller สร้างสัญลักษณ์และสติกเกอร์ PNG ใน browser จาก canonical asset URL โดยใช้ vendored `qrcode-generator` และอ่าน QR จากไฟล์/ภาพที่ผู้ใช้เลือกด้วย vendored `html5-qrcode` เท่านั้น รูปไม่ออกจาก browser และ decoded payload ต้องผ่าน exact HTTPS application path, route, query และ Asset ID allowlist ก่อนเรียก SPA navigation. HTML Service จำกัด `getUserMedia()` จึงไม่เปิด live camera stream; mobile ใช้ native camera/file picker ผ่าน input `capture="environment"` และยังมี Asset ID manual fallback.
 
 ### API and authorization
 
-API เปิดเฉพาะ use-case ที่ชัดเจน เช่น `listEquipment`, `createBorrowRequest`, `adminApproveBorrow` และ `adminCompleteReturn` ไม่เปิด generic Sheet CRUD ทุก public wrapper resolve ผู้ใช้จาก session, ตรวจสถานะ user และตรวจ role ฝั่ง server ก่อนทำงาน
+API เปิดเฉพาะ use-case ที่ชัดเจน เช่น `listEquipment`, `createBorrowRequest`, `adminApproveBorrow` และ `adminCompleteReturn` ไม่เปิด generic Sheet CRUD ทุก public wrapper รับ ID token เป็น argument แรกแล้วตรวจ RS256 signature ด้วย Google JWKS, `iss`, `aud`/`azp`, `iat`/`nbf`/`exp`, `sub`, `email_verified` และ authoritative-email rule ก่อนยอมรับอีเมล จากนั้นจึงหา Users row แบบ exact, ตรวจ `ACTIVE` และ role ฝั่ง server ไม่มี token/invalid token/unknown user/inactive/insufficient role ถูกปฏิเสธก่อน handler และทุก mutation re-read Users row ภายใน lock เพื่อปิด privilege escalation
 
 ### Domain services
 
@@ -80,9 +82,11 @@ Google Sheets ไม่มี rollback/cross-sheet transaction จริง ล�
 
 ## Security boundaries
 
-- Deployment จำกัด Google Workspace domain เดียวและ unknown user ถูกปฏิเสธเป็นค่าเริ่มต้น
-- ผู้ใช้แอปทั่วไปไม่มี direct role ต่อ Sheet/Drive folder; เฉพาะผู้ deploy และผู้ดูแลที่อนุมัติเท่านั้นที่เข้าถึง datastore/project โดยตรง และ manifest pin OAuth scope เฉพาะ Drive, Sheets และ Active User email
-- server ไม่รับ user email, role, audit actor, timestamp หรือ protected status จาก browser เป็นความจริง
+- Deployment เปิดเฉพาะ Google Account ที่ลงชื่อเข้าใช้ (`ANYONE`) แต่ application allowlist ใช้ `ALLOWED_DOMAINS`; `ALLOWED_DOMAIN` เป็น legacy fallback เฉพาะเมื่อยังไม่มี `ALLOWED_DOMAINS` และไม่รวม subdomain/alias โดยอัตโนมัติ
+- ผู้ใช้แอปทั่วไปไม่มี direct role ต่อ Sheet/Drive folder; เฉพาะผู้ deploy และผู้ดูแลที่อนุมัติเท่านั้นที่เข้าถึง datastore/project โดยตรง Manifest pin Drive, Sheets, deployer-email และ `script.external_request` สำหรับดึง Google JWKS
+- Google ID token เป็นหลักฐานที่ยังต้องตรวจครบทุก claim ไม่ใช่ authorization; server ไม่รับ email, role, audit actor, timestamp หรือ protected status จาก browser เป็นความจริง
+- บัญชี `@gmail.com` ต้องมี `email_verified=true`; Google Workspace/non-Gmail ต้องมี `email_verified=true` และ `hd` ตรง exact email domain ที่ allowlist ระบบไม่ยอมรับ Google Account ที่ใช้อีเมล third-party และไม่มี authoritative `hd`
+- Users row เป็น explicit application allowlist: ไม่มีการ auto-provision, unknown/inactive ถูกปฏิเสธ และ Admin endpoint ตรวจ role จาก row ปัจจุบันทุกครั้ง
 - user อ่าน Borrow ของตนเองเท่านั้น; admin อ่านและ mutate ข้อมูลส่วนกลางตาม action ที่อนุญาต
 - ข้อมูล text ถูกจำกัดความยาว ป้องกัน formula injection ก่อนลง Sheet และ escape ก่อนเข้า HTML
 - QR มีไว้ระบุ Asset ID/route เท่านั้น ไม่ให้สิทธิ์และไม่ trigger mutation อัตโนมัติ
@@ -91,8 +95,11 @@ Google Sheets ไม่มี rollback/cross-sheet transaction จริง ล�
 - History ไม่มี update/delete endpoint และ reference records ใช้ inactive/retired แทน delete
 - Operations และ payload/before/result evidence ไม่มี generic browser endpoint; client ได้รับเฉพาะผลลัพธ์ use-case ที่ผ่าน authorization
 - รูปใน Drive รองรับเฉพาะ `DOMAIN_WITH_LINK` หรือ `ANYONE_WITH_LINK`, ตรวจ effective sharing หลังตั้งค่า และเก็บ resource key ใน URL เมื่อ Drive กำหนด; ไม่มีโหมด `PRIVATE` ที่อ้างว่า browser ของผู้ใช้คนอื่นเปิดรูปได้โดยไม่มี delivery proxy
-- `DOMAIN_WITH_LINK` เป็น authorization boundary ระดับ Workspace domain ไม่ใช่ Users row; same-domain link holder อาจดูรูปได้แม้เข้าแอปไม่ได้ และการเปลี่ยน policy ไม่ย้อนสิทธิ์ไฟล์เก่า
+- `DOMAIN_WITH_LINK` เป็น authorization boundary ระดับ Workspace domain ไม่ใช่ Users row และไม่รองรับ Gmail ภายนอก; ผู้ใช้ Gmail ที่ผ่าน application auth อาจยังเปิดรูปไม่ได้ ขณะที่ same-domain link holder อาจดูรูปได้แม้เข้าแอปไม่ได้
+- `ANYONE_WITH_LINK` ทำให้ Workspace/Gmail เปิดภาพได้ แต่ทุกคนที่มี URL อาจอ่านภาพโดยไม่ผ่าน token หรือ Users row จึงใช้ได้เฉพาะภาพครุภัณฑ์ที่จัดชั้นเป็นสาธารณะตามลิงก์และผ่านการอนุมัติความเสี่ยง การเปลี่ยน policy ไม่ย้อนสิทธิ์ไฟล์เก่า
 
 ## Deployment topology
 
-โปรเจกต์ Apps Script แบบ standalone เชื่อม Google Sheet และ Drive folder ด้วย ID จาก Script Properties Production ใช้ versioned Web app ที่ execute as ผู้ deploy และจำกัด access เฉพาะ Workspace domain เดียวกัน ผู้ใช้ทั่วไปจึงไม่มี direct access ต่อ Sheet/folder แต่ต้องผ่าน identity pilot ว่า `Session.getActiveUser().getEmail()` คืน visitor จริงก่อนเปิดใช้ การแก้ deployment เดิมให้ชี้ version ใหม่จะรักษา `/exec` URL และ QR sticker เดิม รายละเอียด deployment, rollback และ live acceptance อยู่ใน [DEPLOYMENT.md](DEPLOYMENT.md)
+โปรเจกต์ Apps Script แบบ standalone เชื่อม Google Sheet, Drive folder และ Web OAuth Client ID ด้วย Script Properties Production ใช้ versioned Web app แบบ `USER_DEPLOYING` + `ANYONE` ซึ่งหมายถึง Google Account ที่ลงชื่อเข้าใช้แล้ว ไม่ใช่ `ANYONE_ANONYMOUS`; backend จึงใช้สิทธิ์ผู้ deploy โดยผู้ใช้ทั่วไปไม่มี direct access ต่อ Sheet/folder แต่ identity มาจาก verified Google ID token
+
+HTML Service รัน client ใน sandboxed iframe ขณะที่ Google OAuth Web Client บังคับ exact Authorized JavaScript origin โดยไม่รองรับ wildcard การเปิดใช้จึงต้อง pilot จาก production `/exec` จริง ตรวจ `window.location.origin` ใน frame ที่เรียก GIS และลงทะเบียน exact scheme/hostname/port นั้น หาก iframe origin เปลี่ยนระหว่างบัญชี/browser/device หรือไม่สามารถลงทะเบียนให้เสถียร ต้องหยุด rollout และย้าย sign-in surface ไปยัง origin ที่องค์กรควบคุมแทนการผ่อน validation การแก้ deployment เดิมให้ชี้ version ใหม่จะรักษา `/exec` URL และ QR sticker เดิม รายละเอียด deployment, rollback และ live acceptanceอยู่ใน [DEPLOYMENT.md](DEPLOYMENT.md)

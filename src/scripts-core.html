@@ -626,6 +626,7 @@
   }
 
   document.addEventListener('DOMContentLoaded', bootstrapApplication);
+  global.addEventListener('crs:authentication-required', bootstrapApplication);
   global.addEventListener('online', updateNetworkStatus);
   global.addEventListener('offline', updateNetworkStatus);
   document.addEventListener('DOMContentLoaded', updateNetworkStatus);

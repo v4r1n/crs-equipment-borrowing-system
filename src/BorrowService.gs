@@ -107,7 +107,7 @@ function createBorrowRequest_(input, actor) {
   var dates = validateBorrowDates_(input.borrow_date, input.due_date);
   var purpose = requireText_(input.purpose, 'purpose', 'วัตถุประสงค์', 1000);
   var note = optionalText_(input.note, 'note', 'หมายเหตุ', 2000, true);
-  return withUserMutation_(function (lockedActor) {
+  return withUserMutation_(actor, function (lockedActor) {
     var pendingOperation = findRecordById_(SHEETS.OPERATIONS, 'operation_id', commandId);
     var pendingPayload = pendingOperation ? operationPayload_(pendingOperation) : null;
     var borrowerUserId = pendingOperation && lockedActor.role === USER_ROLE.ADMIN
@@ -303,7 +303,7 @@ function approveBorrow_(input, actor) {
   input = input || {};
   var borrowId = requireBorrowId_(input.borrow_id);
   var commandId = requireCommandId_(input.command_id);
-  return withAdminMutation_(function (lockedActor) {
+  return withAdminMutation_(actor, function (lockedActor) {
     return executeBorrowTransitionLocked_({
       borrowId: borrowId,
       commandId: commandId,
@@ -328,7 +328,7 @@ function rejectBorrow_(input, actor) {
   var borrowId = requireBorrowId_(input.borrow_id);
   var commandId = requireCommandId_(input.command_id);
   var reason = requireText_(input.reason, 'reason', 'เหตุผลที่ปฏิเสธ', 1000);
-  return withAdminMutation_(function (lockedActor) {
+  return withAdminMutation_(actor, function (lockedActor) {
     return executeBorrowTransitionLocked_({
       borrowId: borrowId,
       commandId: commandId,
@@ -361,7 +361,7 @@ function checkoutBorrow_(input, actor) {
   input = input || {};
   var borrowId = requireBorrowId_(input.borrow_id);
   var commandId = requireCommandId_(input.command_id);
-  return withAdminMutation_(function (lockedActor) {
+  return withAdminMutation_(actor, function (lockedActor) {
     return executeBorrowTransitionLocked_({
       borrowId: borrowId,
       commandId: commandId,
@@ -389,7 +389,7 @@ function requestReturn_(input, actor) {
   var borrowId = requireBorrowId_(input.borrow_id);
   var commandId = requireCommandId_(input.command_id);
   var note = optionalText_(input.note, 'note', 'หมายเหตุ', 1000, true);
-  return withUserMutation_(function (lockedActor) {
+  return withUserMutation_(actor, function (lockedActor) {
     return executeBorrowTransitionLocked_({
       borrowId: borrowId,
       commandId: commandId,
@@ -446,7 +446,7 @@ function completeReturn_(input, actor) {
     }, false);
   var checklist = input.items;
   validateReturnDisposition_(condition, disposition, note);
-  return withAdminMutation_(function (lockedActor) {
+  return withAdminMutation_(actor, function (lockedActor) {
     var borrow = findRecordById_(SHEETS.BORROW, 'borrow_id', borrowId);
     assertApp_(borrow, 'NOT_FOUND', 'ไม่พบรายการยืม', null, false);
     var equipment = findRecordById_(SHEETS.EQUIPMENT, 'asset_id', borrow.asset_id);
@@ -558,6 +558,7 @@ function completeReturn_(input, actor) {
 }
 
 function listMyBorrowing_(query, user) {
+  user = assertUserActor_(user);
   query = query || {};
   var pageQuery = normalizePageQuery_(
     query,
@@ -575,8 +576,8 @@ function listMyBorrowing_(query, user) {
   return paginateRecords_(sortRecords_(records, pageQuery.sortBy, pageQuery.sortDirection), pageQuery);
 }
 
-function listBorrowingForAdmin_(query) {
-  requireAdmin_(true);
+function listBorrowingForAdmin_(query, actor) {
+  assertAdminActor_(actor);
   query = query || {};
   var pageQuery = normalizePageQuery_(
     query,
@@ -597,6 +598,7 @@ function listBorrowingForAdmin_(query) {
 }
 
 function getBorrowDetail_(borrowId, user) {
+  user = assertUserActor_(user);
   var normalizedId = requireBorrowId_(borrowId);
   var borrow = findRecordById_(SHEETS.BORROW, 'borrow_id', normalizedId);
   assertApp_(borrow, 'NOT_FOUND', 'ไม่พบรายการยืม', null, false);

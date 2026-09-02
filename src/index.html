@@ -28,6 +28,7 @@
   <body
     data-initial-view="<?= initialView ?>"
     data-initial-asset-id="<?= initialAssetId ?>"
+    data-google-oauth-client-id="<?= googleOAuthClientId ?>"
   >
     <a class="skip-link" href="#app-main">ข้ามไปยังเนื้อหาหลัก</a>
 
@@ -68,11 +69,16 @@
           <i class="bi bi-person-lock"></i>
         </span>
         <p id="access-state-eyebrow" class="eyebrow mt-4 mb-2">ไม่สามารถเปิดระบบได้</p>
-        <h1 id="access-state-title" class="h4 mb-2" data-access-title>กรุณาใช้บัญชีองค์กร</h1>
+        <h1 id="access-state-title" class="h4 mb-2" data-access-title>กรุณาลงชื่อเข้าใช้ Google</h1>
         <p id="access-state-message" class="text-secondary mb-4" data-access-message>
-          เปิดลิงก์นี้ด้วยบัญชี Google Workspace ที่ได้รับสิทธิ์จากผู้ดูแลระบบ
+          เลือกบัญชี Google ที่ได้รับสิทธิ์จากผู้ดูแลระบบ
         </p>
         <p id="access-state-request-id" class="request-id mb-4" data-access-request-id></p>
+        <div
+          id="google-signin-button"
+          class="d-flex justify-content-center mb-3"
+          aria-label="ลงชื่อเข้าใช้ด้วย Google"
+        ></div>
         <button class="btn btn-primary px-4" type="button" data-action="retry-bootstrap">
           <i class="bi bi-arrow-clockwise me-2" aria-hidden="true"></i>ลองอีกครั้ง
         </button>
@@ -225,6 +231,7 @@
       integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
       crossorigin="anonymous"
     ></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <?!= include_('vendor-qrcode-generator'); ?>
     <?!= include_('vendor-html5-qrcode'); ?>
     <?!= include_('scripts-api'); ?>

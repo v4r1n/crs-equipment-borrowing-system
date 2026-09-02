@@ -1,42 +1,57 @@
-function getActiveEmail_() {
-  var email = normalizeEmail_(Session.getActiveUser().getEmail());
-  assertApp_(email && isSafeEmailValue_(email), 'UNAUTHENTICATED',
-    'ไม่พบอีเมลผู้ใช้งาน กรุณาเปิดระบบด้วยบัญชี Google Workspace ที่องค์กรอนุญาต', null, false);
-  var config = getRuntimeConfig_();
-  assertApp_(config.ALLOWED_DOMAIN, 'CONFIG_ERROR',
-    'กรุณาตั้งค่า ALLOWED_DOMAIN ก่อนเปิดใช้งานระบบ', null, false);
-  assertApp_(isEmailInDomain_(email, config.ALLOWED_DOMAIN), 'FORBIDDEN',
-    'บัญชีนี้อยู่นอกโดเมนที่องค์กรอนุญาต', null, false);
-  return email;
+function requireUser_(idToken) {
+  return requireUserForIdentity_(verifyGoogleIdToken_(idToken));
 }
 
-function requireUser_(allowProvision) {
-  var email = getActiveEmail_();
-  var user = findRecordByField_(SHEETS.USERS, 'email', email, true);
-  if (allowProvision !== false) {
-    var autoProvisionOperation = findRecordById_(
-      SHEETS.OPERATIONS,
-      'operation_id',
-      autoProvisionCommandId_(email)
-    );
-    var mustRecoverProvision = autoProvisionOperation &&
-      autoProvisionOperation.status === OPERATION_STATUS.STARTED;
-    if (mustRecoverProvision || (!user && getRuntimeConfig_().AUTO_PROVISION_USERS)) {
-      user = provisionCurrentUser_(email);
-    }
-  }
-  assertApp_(user, 'FORBIDDEN',
+function requireUserForIdentity_(identity) {
+  assertApp_(identity && isSafeEmailValue_(identity.email), 'UNAUTHENTICATED',
+    'กรุณาลงชื่อเข้าใช้ด้วยบัญชี Google ที่ได้รับอนุญาต', null, false);
+  var email = normalizeEmail_(identity.email);
+  var matches = listRecords_(SHEETS.USERS).filter(function (record) {
+    return normalizeEmail_(stripSheetEscape_(record.email)) === email;
+  });
+  assertApp_(matches.length === 1, 'FORBIDDEN',
     'บัญชีนี้ยังไม่ได้รับสิทธิ์ใช้งาน กรุณาติดต่อผู้ดูแลระบบ', null, false);
+  var user = matches[0];
   assertApp_(user.status === RECORD_STATUS.ACTIVE, 'USER_DISABLED',
     'บัญชีนี้ถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ', null, false);
+  assertApp_([USER_ROLE.USER, USER_ROLE.ADMIN].indexOf(user.role) !== -1, 'FORBIDDEN',
+    'บัญชีนี้ไม่มีบทบาทที่ระบบรองรับ กรุณาติดต่อผู้ดูแลระบบ', null, false);
   return user;
 }
 
-function requireAdmin_(allowProvision) {
-  var user = requireUser_(allowProvision);
+function requireAdmin_(idToken) {
+  var user = requireUser_(idToken);
   assertApp_(user.role === USER_ROLE.ADMIN, 'FORBIDDEN',
     'เฉพาะผู้ดูแลระบบเท่านั้นที่ทำรายการนี้ได้', null, false);
   return user;
+}
+
+function assertUserActor_(actor) {
+  assertApp_(actor && /^USR-\d{6}$/.test(String(actor.user_id || '')) &&
+    isSafeEmailValue_(stripSheetEscape_(actor.email)) &&
+    [USER_ROLE.USER, USER_ROLE.ADMIN].indexOf(actor.role) !== -1 &&
+    actor.status === RECORD_STATUS.ACTIVE, 'FORBIDDEN',
+  'ไม่สามารถยืนยันสิทธิ์ของผู้ใช้งานได้', null, false);
+  return actor;
+}
+
+function assertAdminActor_(actor) {
+  var user = assertUserActor_(actor);
+  assertApp_(user.role === USER_ROLE.ADMIN, 'FORBIDDEN',
+    'เฉพาะผู้ดูแลระบบเท่านั้นที่ทำรายการนี้ได้', null, false);
+  return user;
+}
+
+function refreshUserActor_(actor) {
+  var expected = assertUserActor_(actor);
+  var current = requireUserForIdentity_({ email: stripSheetEscape_(expected.email) });
+  assertApp_(current.user_id === expected.user_id, 'FORBIDDEN',
+    'ข้อมูลบัญชีผู้ใช้งานเปลี่ยนแปลงแล้ว กรุณาลงชื่อเข้าใช้อีกครั้ง', null, false);
+  return current;
+}
+
+function refreshAdminActor_(actor) {
+  return assertAdminActor_(refreshUserActor_(actor));
 }
 
 function provisionCurrentUser_(email) {
@@ -103,15 +118,15 @@ function autoProvisionCommandId_(email) {
   return 'auto-user-' + Utilities.base64EncodeWebSafe(digest).replace(/=+$/, '');
 }
 
-function withUserMutation_(callback) {
+function withUserMutation_(actor, callback) {
   return withScriptLock_(function () {
-    return callback(requireUser_(false));
+    return callback(refreshUserActor_(actor));
   });
 }
 
-function withAdminMutation_(callback) {
+function withAdminMutation_(actor, callback) {
   return withScriptLock_(function () {
-    return callback(requireAdmin_(false));
+    return callback(refreshAdminActor_(actor));
   });
 }
 

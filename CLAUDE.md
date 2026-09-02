@@ -9,8 +9,8 @@ Build and maintain a production-usable internal equipment borrowing system for s
 - Keep the runtime free of paid infrastructure, VPS, Docker, and external databases.
 - Treat one Equipment row as one physical asset. `quantity` is always `1`; identical assets share an SKU.
 - Use the canonical English enum values from `src/Constants.gs` in storage and translate only in the UI.
-- Derive the signed-in identity with `Session.getActiveUser().getEmail()`. Never use client-supplied identity or `Session.getEffectiveUser()` as the visitor.
-- Deny access when identity is blank, outside the configured Workspace domain, absent, or inactive.
+- Derive visitor identity only from a Google Identity Services ID token whose signature and claims are verified by the backend. Never use `Session.getActiveUser()`, `Session.getEffectiveUser()`, or an unverified client-supplied email/role as the visitor.
+- Deny access when the token is missing, invalid, expired, issued to another OAuth client, outside `ALLOWED_DOMAINS`, non-authoritative for the asserted email, absent from Users, inactive, or insufficiently privileged. Never auto-provision a visitor.
 - Enforce authorization in every server mutation. Hiding a button is not authorization.
 - Put every state-changing workflow under `LockService.getScriptLock()`, re-read authoritative rows inside the lock, and validate the exact source state.
 - Never hard-delete Equipment, Borrow, Users, Categories, IncludedItems, or History records. Use lifecycle statuses.
@@ -18,7 +18,7 @@ Build and maintain a production-usable internal equipment borrowing system for s
 - Use bulk `getValues()`/`setValues()` and header-based records. Do not read a sheet cell-by-cell.
 - Cache only performance data. Never use cached roles, availability, active-loan state, or counters for correctness.
 - Internal server helpers end in `_`; public RPC functions are narrow, guarded wrappers.
-- Do not introduce unfinished runtime placeholders. Only spreadsheet ID, Drive folder ID, web-app URL, allowed domain, and initial admin email are deployment configuration.
+- Do not introduce unfinished runtime placeholders. Spreadsheet ID, Drive folder ID, web-app URL, allowed domains, Google Web OAuth Client ID, and initial admin email remain deployment configuration in Script Properties; credentials and resource IDs must never be hardcoded or committed.
 
 ## V1 state model
 
@@ -59,4 +59,4 @@ Complete this checklist at the end of every phase:
 
 ## Current delivery status
 
-Phases 1–7 source delivery is complete. Organization-owned Google Workspace deployment and live acceptance remain operational handoff work; follow `docs/DEPLOYMENT.md` and the exact state in `docs/MEMORY.md`.
+Phases 1–7 source delivery is complete and the original `yru.ac.th` deployment passed live testing. The external-account authentication release still requires a versioned redeploy and live Google Identity Services acceptance; follow `docs/DEPLOYMENT.md` and the exact state in `docs/MEMORY.md`.

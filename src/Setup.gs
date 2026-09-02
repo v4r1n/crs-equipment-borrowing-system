@@ -2,7 +2,7 @@
  * Run once from the Apps Script editor after setting the first admin email.
  * The function is idempotent and never clears existing rows.
  */
-function setupSystem() {
+function setupSystem_() {
   var result = executeSafely_(function () {
     return withScriptLock_(function () {
       var config = getRuntimeConfig_();
@@ -43,7 +43,9 @@ function setupSystem() {
       bumpCacheEpoch_();
       var warnings = [];
       if (!config.DRIVE_FOLDER_ID) warnings.push('ยังไม่ได้ตั้งค่า DRIVE_FOLDER_ID; การอัปโหลดรูปจะยังใช้งานไม่ได้');
-      if (!config.ALLOWED_DOMAIN) warnings.push('ควรตั้งค่า ALLOWED_DOMAIN และจำกัด Web app ให้ใช้ภายใน Workspace domain');
+      if (!config.ALLOWED_DOMAINS.length) {
+        warnings.push('ยังไม่ได้ตั้งค่า ALLOWED_DOMAINS; Web app จะปฏิเสธผู้ใช้ทุกบัญชี');
+      }
       if (!getWebAppBaseUrl_()) {
         warnings.push('ยังไม่พบ Web app URL /exec ที่ตรงกับ deployment; หลัง deploy ให้ตั้ง WEB_APP_URL และทดสอบ QR Code');
       }
@@ -68,6 +70,15 @@ function setupSystem() {
 }
 
 function validateSetupDeploymentConfig_(config) {
+  assertApp_(config.ALLOWED_DOMAINS.length > 0, 'CONFIG_ERROR',
+    'กรุณาตั้งค่า ALLOWED_DOMAINS หรือ ALLOWED_DOMAIN ก่อนรัน setup', null, false);
+  var invalidDomains = config.ALLOWED_DOMAINS.filter(function (domain) {
+    return !isSafeDomainValue_(domain);
+  });
+  assertApp_(!invalidDomains.length, 'CONFIG_ERROR',
+    'ALLOWED_DOMAINS มี domain ไม่ถูกต้อง: ' + invalidDomains.join(', '), null, false);
+  assertApp_(isGoogleOAuthClientId_(config.GOOGLE_OAUTH_CLIENT_ID), 'CONFIG_ERROR',
+    'กรุณาตั้งค่า GOOGLE_OAUTH_CLIENT_ID เป็น Web OAuth Client ID ที่ถูกต้อง', null, false);
   normalizeImageSharingMode_(config.IMAGE_SHARING);
   if (config.DRIVE_FOLDER_ID) {
     try { DriveApp.getFolderById(config.DRIVE_FOLDER_ID); }
@@ -88,15 +99,16 @@ function assertSetupCaller_(config) {
   var email = normalizeEmail_(Session.getActiveUser().getEmail());
   assertApp_(isSafeEmailValue_(email), 'UNAUTHENTICATED',
     'ไม่พบอีเมลผู้ใช้งาน กรุณารัน setup ด้วยบัญชี Google Workspace', null, false);
-  assertApp_(config.ALLOWED_DOMAIN, 'CONFIG_ERROR',
-    'กรุณาตั้งค่า ALLOWED_DOMAIN ก่อนรัน setup', null, false);
-  assertApp_(isEmailInDomain_(email, config.ALLOWED_DOMAIN), 'FORBIDDEN',
-    'บัญชีที่รัน setup ไม่อยู่ใน ALLOWED_DOMAIN', null, false);
+  assertApp_(config.ALLOWED_DOMAINS.length, 'CONFIG_ERROR',
+    'กรุณาตั้งค่า ALLOWED_DOMAINS หรือ ALLOWED_DOMAIN ก่อนรัน setup', null, false);
+  assertApp_(isEmailInAllowedDomains_(email, config.ALLOWED_DOMAINS), 'FORBIDDEN',
+    'บัญชีที่รัน setup ไม่อยู่ใน ALLOWED_DOMAINS', null, false);
   var invalidAdmins = config.ADMIN_EMAILS.filter(function (adminEmail) {
-    return !isSafeEmailValue_(adminEmail) || !isEmailInDomain_(adminEmail, config.ALLOWED_DOMAIN);
+    return !isSafeEmailValue_(adminEmail) ||
+      !isEmailInAllowedDomains_(adminEmail, config.ALLOWED_DOMAINS);
   });
   assertApp_(!invalidAdmins.length, 'CONFIG_ERROR',
-    'ADMIN_EMAILS มีอีเมลที่อยู่นอก ALLOWED_DOMAIN: ' + invalidAdmins.join(', '), null, false);
+    'ADMIN_EMAILS มีอีเมลที่อยู่นอก ALLOWED_DOMAINS: ' + invalidAdmins.join(', '), null, false);
   var spreadsheet = getSpreadsheet_();
   var isBootstrap = !hasCompletedSetupRaw_(spreadsheet);
   if (isBootstrap) {

@@ -10,12 +10,20 @@
       if (method) failures.push(method);
     });
   });
+  var expireOnce = String(controls.get('expire') || '').trim();
+  var expiredMethods = Object.create(null);
 
   var state = {
     calls: [],
     history: [],
     clipboard: '',
-    sequence: 0
+    sequence: 0,
+    googleIdentity: {
+      initialized: false,
+      buttonRendered: false,
+      credentialCount: 0
+    },
+    testIdToken: 'test-google-id-token'
   };
   global.__CRS_TEST__ = state;
 
@@ -372,6 +380,19 @@
   function responseFor(method, args) {
     state.sequence += 1;
     var requestId = 'test-request-' + String(state.sequence).padStart(4, '0');
+    if (method === expireOnce && !expiredMethods[method]) {
+      expiredMethods[method] = true;
+      return {
+        ok: false,
+        error: {
+          code: 'UNAUTHENTICATED',
+          message: 'Google ID token หมดอายุ กรุณาลงชื่อเข้าใช้อีกครั้ง',
+          fieldErrors: null,
+          retryable: false
+        },
+        meta: { requestId: requestId }
+      };
+    }
     if (failures.indexOf(method) !== -1) {
       return {
         ok: false,
@@ -415,12 +436,32 @@
         if (property === 'then') return undefined;
         return function () {
           var method = String(property);
-          var args = Array.prototype.slice.call(arguments);
-          state.calls.push({ method: method, args: clone(args), at: Date.now() });
+          var rawArgs = Array.prototype.slice.call(arguments);
+          var idToken = typeof rawArgs[0] === 'string' ? rawArgs[0] : '';
+          var args = rawArgs.slice(1);
+          state.calls.push({
+            method: method,
+            idToken: idToken,
+            args: clone(args),
+            at: Date.now()
+          });
           var delay = Math.max(0, Math.min(1000, Number(controls.get('delay') || 0)));
           global.setTimeout(function () {
             if (String(controls.get('transport') || '') === method) {
               failureHandler(new Error('Simulated google.script.run transport failure'));
+              return;
+            }
+            if (!idToken) {
+              successHandler({
+                ok: false,
+                error: {
+                  code: 'UNAUTHENTICATED',
+                  message: 'ไม่พบ Google ID token สำหรับคำขอนี้',
+                  fieldErrors: null,
+                  retryable: false
+                },
+                meta: { requestId: 'test-missing-token' }
+              });
               return;
             }
             successHandler(responseFor(method, args));
@@ -442,7 +483,7 @@
     return { hash: global.location.hash.replace(/^#/, ''), parameter: parameter, parameters: parameters };
   }
 
-  var harnessControlKeys = ['role', 'access', 'fail', 'transport', 'delay', 'qr'];
+  var harnessControlKeys = ['role', 'access', 'fail', 'expire', 'transport', 'delay', 'qr', 'identity'];
   function writeHistory(kind, historyState, parameters, title) {
     var rawParameters = clone(parameters || {});
     state.history.push({ kind: kind, state: clone(historyState || {}), parameters: rawParameters, title: title || '' });
@@ -479,7 +520,45 @@
     }
   };
   Object.defineProperty(script, 'run', { configurable: false, enumerable: true, get: makeRunner });
-  global.google = { script: script };
+
+  var identityCallback = null;
+  function issueGoogleCredential() {
+    if (!identityCallback || controls.get('identity') === 'missing') return;
+    state.googleIdentity.credentialCount += 1;
+    identityCallback({
+      credential: state.testIdToken,
+      select_by: 'btn'
+    });
+  }
+
+  var identity = {
+    initialize: function (configuration) {
+      identityCallback = configuration && configuration.callback;
+      state.googleIdentity.initialized = true;
+      state.googleIdentity.clientId = String(configuration && configuration.client_id || '');
+    },
+    renderButton: function (container) {
+      state.googleIdentity.buttonRendered = true;
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = 'Sign in with Google';
+      button.setAttribute('data-test-google-signin', '');
+      button.addEventListener('click', issueGoogleCredential);
+      container.appendChild(button);
+      if (controls.get('identity') !== 'manual' && controls.get('identity') !== 'missing') {
+        global.setTimeout(issueGoogleCredential, 0);
+      }
+    },
+    prompt: function () {
+      global.setTimeout(issueGoogleCredential, 0);
+    },
+    disableAutoSelect: function () {}
+  };
+
+  global.google = {
+    script: script,
+    accounts: { id: identity }
+  };
 
   state.simulateHistoryChange = function (route, parameters) {
     if (historyChangeHandler) {

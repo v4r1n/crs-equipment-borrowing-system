@@ -1,6 +1,6 @@
 # คู่มือติดตั้ง Deploy และส่งมอบระบบ
 
-คู่มือนี้ใช้สำหรับนำ CRS Equipment Borrowing System รุ่น `0.1.0` ไปติดตั้งบน Google Workspace จริง ตั้งแต่สร้างทรัพยากรจนถึงตรวจรับ User/Admin และดูแลหลังเปิดใช้งาน ขั้นตอนทั้งหมดใช้บริการ Google Workspace และไม่ต้องมี VPS หรือฐานข้อมูลแยก
+คู่มือนี้ใช้สำหรับนำ CRS Equipment Borrowing System รุ่น `0.2.0` ไปติดตั้งบน Google Workspace จริง ตั้งแต่สร้างทรัพยากรจนถึงตรวจรับ Workspace/Gmail User/Admin และดูแลหลังเปิดใช้งาน ขั้นตอนทั้งหมดใช้บริการของ Google และไม่ต้องมี VPS หรือฐานข้อมูลแยก
 
 > สถานะของ repository เป็น source ที่ผ่านการทดสอบในเครื่อง ไม่ใช่หลักฐานว่าระบบถูก deploy ในโดเมนขององค์กรแล้ว ผู้รับผิดชอบ deployment ต้องทำรายการใน [Deployment Acceptance Matrix](../tests/MANUAL_ACCEPTANCE.md) ให้ผ่านก่อนเปิดใช้งานจริง
 
@@ -10,22 +10,23 @@
 |---|---|
 | Apps Script project | Standalone project ภายใต้บัญชี Google Workspace ขององค์กร |
 | Execute as | ผู้ deploy (`Me` / `USER_DEPLOYING`) |
-| Who has access | เฉพาะผู้ใช้ใน Workspace domain เดียวกัน (`DOMAIN`) |
+| Who has access | Google Account ที่ลงชื่อเข้าใช้แล้ว (`ANYONE`); ห้าม `ANYONE_ANONYMOUS` |
 | Database | Google Sheet ที่ระบุด้วย `SPREADSHEET_ID` |
 | Image storage | Google Drive folder ที่ระบุด้วย `DRIVE_FOLDER_ID` |
-| Visitor identity | `Session.getActiveUser().getEmail()` และต้องตรงกับ Users row ที่ Active |
+| Visitor identity | Google Identity Services ID token ที่ backend ตรวจครบ แล้วตรงกับ Users row ที่ `ACTIVE` |
 | Production URL | URL แบบ versioned deployment ที่ลงท้ายด้วย `/exec` |
 
-รูปแบบนี้ทำให้ผู้ใช้ทั่วไปไม่ต้องมีสิทธิ์อ่านหรือแก้ไข Sheet/Drive folder โดยตรง เพราะ backend ทำงานด้วยสิทธิ์ของผู้ deploy การใช้งานและ quota ของบริการที่ backend เรียกจึงรวมอยู่ที่บัญชีผู้ deploy และต้องมีผู้ติดตาม execution health แต่ Google ระบุว่าอีเมลจาก Active User อาจว่างได้ในบางบริบท แม้ข้อจำกัดนี้โดยทั่วไปไม่เกิดเมื่อ developer และผู้ใช้เป็นสมาชิก Workspace domain เดียวกัน ดังนั้นการทดสอบด้วยบัญชี User คนละบัญชีกับผู้ deploy จึงเป็น release gate ที่ห้ามข้าม
+รูปแบบนี้ทำให้ผู้ใช้ทั่วไปไม่ต้องมีสิทธิ์อ่านหรือแก้ไข Sheet/Drive folder โดยตรง เพราะ backend ทำงานด้วยสิทธิ์ของผู้ deploy การใช้งานและ quota ของบริการที่ backend เรียกจึงรวมอยู่ที่บัญชีผู้ deploy และต้องมีผู้ติดตาม execution health การตั้ง `ANYONE` เป็นเพียง Google login gate เพื่อให้บัญชีภายนอกเปิด Web app ได้ ไม่ใช่การอนุญาตเข้าแอป: ทุก RPC ต้องมี Google ID token ที่ backend ตรวจ signature/claims/domain แล้วตรวจ Users row, status และ role อีกชั้น
 
-ห้ามแก้ไปใช้ `Session.getEffectiveUser()` เพราะ deployment แบบ execute-as-deployer จะได้อีเมลของผู้ deploy ไม่ใช่ผู้เข้าชม และห้ามเปิดเป็น `Anyone` หรือ anonymous เพื่อแก้ปัญหา identity
+ห้ามใช้ `Session.getActiveUser()` หรือ `Session.getEffectiveUser()` เป็น visitor identity, ห้ามเชื่อ email/role ที่ browser ส่งเอง, ห้ามใช้ token ที่เพียง decode โดยไม่ตรวจ signature และห้ามตั้ง access เป็น `ANYONE_ANONYMOUS` ไม่ว่ากรณีใด
 
 ## สิ่งที่ต้องเตรียม
 
 - บัญชี Workspace อายุการใช้งานระยะยาวที่องค์กรควบคุมสำหรับเป็นผู้ deploy ไม่ควรใช้บัญชีพนักงานที่อาจถูกปิดเมื่อย้ายงาน
 - สิทธิ์สร้าง/แก้ไข Google Sheet, Google Drive folder และ Apps Script project ด้วยบัญชีเดียวกัน
-- อีเมล Admin เริ่มต้นอย่างน้อยหนึ่งบัญชีใน domain เดียวกัน โดยบัญชีที่รัน setup ครั้งแรกต้องอยู่ในรายการนี้
-- บัญชี User ทดสอบอย่างน้อยสองบัญชีใน domain เดียวกันสำหรับทดสอบสิทธิ์และ double booking โดยใช้ browser profile แยกจาก Admin
+- Google Cloud project ที่องค์กรควบคุม พร้อม OAuth consent/branding แบบ **External** และ OAuth Client ชนิด **Web application** สำหรับ Google Identity Services
+- อีเมล Admin เริ่มต้นอย่างน้อยหนึ่งบัญชีใน allowlisted domain โดยบัญชี Workspace ที่รัน setup ครั้งแรกต้องอยู่ในรายการนี้
+- บัญชี User ทดสอบอย่างน้อยสองบัญชี โดยมีทั้ง Workspace (`@yru.ac.th`) และ Gmail (`@gmail.com`) ใช้ browser profile แยกจาก Admin; เพิ่มทุกบัญชีเป็น Users row ล่วงหน้า
 - โทรศัพท์ Android/iOS อย่างน้อยหนึ่งเครื่องสำหรับทดสอบ QR, native camera/file picker และ responsive UI
 - Source จาก commit ที่ผ่าน review; บันทึกค่า `git rev-parse HEAD` ไว้ใน change record ก่อน deploy
 
@@ -35,7 +36,7 @@
 
 1. ลงชื่อเข้าใช้ด้วยบัญชี Workspace ที่จะเป็นผู้ deploy
 2. สร้าง Google Sheet เปล่า เช่น `CRS Equipment - Production`
-3. ไม่ต้องสร้าง tab หรือ header เอง `setupSystem()` จะสร้างและตรวจ schema ให้ทั้งหมด
+3. ไม่ต้องสร้าง tab หรือ header เอง `setupSystem_()` จะสร้างและตรวจ schema ให้ทั้งหมด
 4. เปิด URL ของ Sheet แล้วคัดลอกข้อความระหว่าง `/d/` และ `/edit` เก็บเป็น `SPREADSHEET_ID`
 5. จำกัด Share ของ Sheet ไว้เฉพาะบัญชีผู้ deploy และผู้ดูแลข้อมูลที่จำเป็น ผู้ใช้ระบบทั่วไปต้องไม่มีสิทธิ์ตรงทุกระดับ รวม Viewer/Commenter และสิทธิ์ที่ได้ผ่าน group/link
 
@@ -63,12 +64,12 @@ Standalone project เป็นรูปแบบหลักของระบ�
 วิธีที่ไม่ต้องติดตั้งเครื่องมือเพิ่มคือสร้างไฟล์ใน Apps Script editor แล้วคัดลอกเนื้อหาจาก `src/` ให้ตรงชื่อทุกไฟล์
 
 1. แทนที่เนื้อหา `Code.gs` ที่ project สร้างมาให้ โดยลบ `myFunction` เดิมแล้ววาง `src/Code.gs`
-2. สำหรับไฟล์ `.gs` อีก 22 ไฟล์ ให้กด **Add a file > Script** แล้วใส่ชื่อฐานโดยไม่ต้องพิมพ์ `.gs`
+2. สำหรับไฟล์ `.gs` อีก 23 ไฟล์ ให้กด **Add a file > Script** แล้วใส่ชื่อฐานโดยไม่ต้องพิมพ์ `.gs`
 3. สำหรับไฟล์ `.html` ให้กด **Add a file > HTML** แล้วใส่ชื่อฐานโดยไม่ต้องพิมพ์ `.html`
 4. แทนที่ manifest ด้วยเนื้อหาจาก `src/appsscript.json`
 5. บันทึกทุกไฟล์ แล้วตรวจว่าไม่มีไฟล์ชื่อซ้ำ เช่น `Code.gs.gs` หรือไฟล์ runtime เก่าที่ไม่มีใน inventory
 
-ไฟล์ Script จำนวน 23 ไฟล์:
+ไฟล์ Script จำนวน 24 ไฟล์:
 
 ```text
 Api.gs
@@ -84,6 +85,7 @@ EquipmentService.gs
 Errors.gs
 HistoryService.gs
 ImageService.gs
+IdentityService.gs
 IntegrityService.gs
 Migrations.gs
 OperationAdminService.gs
@@ -120,7 +122,7 @@ vendor-html5-qrcode.html
 vendor-qrcode-generator.html
 ```
 
-รวม manifest แล้วมี runtime source 43 ไฟล์ ไม่ต้องอัปโหลด `docs/`, `tests/`, `node_modules/`, `package.json` หรือไฟล์ license เข้า Apps Script การทำงานของไฟล์ `.gs` ไม่ขึ้นกับลำดับที่แสดงใน editor
+รวม manifest แล้วมี runtime source 44 ไฟล์ ไม่ต้องอัปโหลด `docs/`, `tests/`, `node_modules/`, `package.json` หรือไฟล์ license เข้า Apps Script การทำงานของไฟล์ `.gs` ไม่ขึ้นกับลำดับที่แสดงใน editor
 
 ก่อนส่ง source ขึ้น production ผู้พัฒนาควรรันจาก repository ด้วย Node.js 20 ขึ้นไป:
 
@@ -145,53 +147,74 @@ Script Properties เป็นค่าร่วมของทั้ง web app
 ## 5. ตั้ง Drive Folder
 
 1. สร้าง folder ใน Google Drive ด้วยบัญชีผู้ deploy เช่น `CRS Equipment Images - Production`
-2. คัดลอก ID หลัง `/folders/` จาก URL ของ folder
+2. คัดลอก ID หลัง `/folders/` จาก URL ของ folder เช่น `https://drive.google.com/drive/folders/{DRIVE_FOLDER_ID}`
 3. เพิ่ม Script Property `DRIVE_FOLDER_ID` ด้วย ID นี้
-4. เพิ่ม `IMAGE_SHARING` เป็น `DOMAIN_WITH_LINK` ซึ่งเป็นค่าที่แนะนำสำหรับระบบภายใน
+4. เลือก `IMAGE_SHARING` ตามการจัดชั้นข้อมูลและกลุ่มผู้ใช้จริง; external Gmail ต้องใช้ `ANYONE_WITH_LINK` จึงจะเปิดไฟล์จาก Drive URL ได้
 5. อย่าแชร์ folder ให้ผู้ใช้ทั่วไปทุกระดับ รวม Viewer/Commenter, group และ link ระบบจะสร้างไฟล์ด้วยสิทธิ์ผู้ deploy และตั้งสิทธิ์อ่านให้แต่ละไฟล์ตาม policy
 
 `IMAGE_SHARING` ยอมรับเพียง:
 
-- `DOMAIN_WITH_LINK` — ผู้มี link ภายใน domain เปิดรูปได้; ใช้เป็นค่ามาตรฐาน
-- `ANYONE_WITH_LINK` — ทุกคนที่มี link เปิดรูปได้; ใช้เมื่อองค์กรอนุมัติความเสี่ยงด้านข้อมูลแล้วเท่านั้น
+- `DOMAIN_WITH_LINK` — ผู้มี link ภายใน Workspace domain เปิดรูปได้ แต่ Gmail ภายนอกเปิดไม่ได้ แม้ผ่านสิทธิ์แอป
+- `ANYONE_WITH_LINK` — ทุกคนที่มี link เปิดรูปได้โดยไม่ผ่าน ID token หรือ Users row; ใช้เมื่อองค์กรอนุมัติให้ภาพเป็นข้อมูลเปิดตามลิงก์แล้วเท่านั้น
 
-หากนโยบาย Workspace ปิดการแชร์แบบ domain-with-link การอัปโหลดจะ fail closed ด้วย `DRIVE_SHARING_FAILED` ให้ประสาน Workspace Admin แทนการเปลี่ยนเป็น public โดยพลการ
+หากนโยบาย Workspace ปิด sharing mode ที่เลือก การอัปโหลดจะ fail closed ด้วย `DRIVE_SHARING_FAILED` ให้ประสาน Workspace Admin แทนการเปลี่ยนเป็น public โดยพลการ
 
-`DOMAIN_WITH_LINK` เป็น boundary ที่กว้างกว่า Users sheet: สมาชิก domain ที่ไม่มี Users row หรือถูก Inactive แต่ได้รับ URL โดยตรงยังอาจดูรูปได้ รูปจึงต้องเป็นภาพครุภัณฑ์ที่องค์กรอนุมัติให้สมาชิก domain เห็น ห้ามใช้เก็บเอกสารลับ, ข้อมูลบุคคล หรือภาพที่ต้องบังคับสิทธิ์ระดับ Users row หากต้องการ policy แคบกว่านี้ต้องออกแบบ authenticated image delivery ใหม่
+ทั้งสอง mode เป็น boundary ที่กว้างกว่า Users sheet: `DOMAIN_WITH_LINK` อนุญาตสมาชิก domain ที่มี URL แม้ไม่มี Users row หรือถูก Inactive แต่กัน Gmail ออก ส่วน `ANYONE_WITH_LINK` รองรับ Gmail แต่ผู้ถือ URL ทุกคนดูได้ รูปจึงต้องเป็นภาพครุภัณฑ์ที่องค์กรอนุมัติตาม audience นั้น ห้ามใช้เก็บเอกสารลับ ข้อมูลบุคคล หรือภาพที่ต้องบังคับสิทธิ์ระดับ Users row หากต้องการ policy แคบกว่านี้ต้องออกแบบ authenticated image delivery ใหม่
 
 การเปลี่ยน `IMAGE_SHARING` มีผลเฉพาะไฟล์ที่อัปโหลด/แทนที่หลังเปลี่ยนค่า ไม่ย้อนสิทธิ์ไฟล์เก่า และการแทนรูปไม่ได้ลบรูปเดิมอัตโนมัติเพราะ History อาจอ้าง file ID/URL เดิม ให้ผู้ดูแลทำ permission/storage audit และ reconcile reference ก่อนเปลี่ยนสิทธิ์หรือย้ายไฟล์ ห้ามลบจาก Drive แบบ bulk โดยไม่ตรวจหลักฐาน
 
-## 6. ตั้ง Admin และ domain
+## 6. ตั้ง Admin, allowed domains และ Google OAuth Client
 
-เพิ่ม Script Properties อย่างน้อยสองค่า:
+เพิ่ม Script Properties อย่างน้อยสามค่า:
 
 | Property | ตัวอย่างรูปแบบ | กฎ |
 |---|---|---|
-| `ALLOWED_DOMAIN` | `example.com` | ต้องเป็น domain ตัวพิมพ์เล็ก ไม่ใส่ `@` หรือ protocol |
-| `ADMIN_EMAILS` | `admin1@example.com,admin2@example.com` | คั่นหลายบัญชีด้วย comma; ทุกบัญชีต้องอยู่ใน `ALLOWED_DOMAIN` |
+| `ALLOWED_DOMAINS` | `yru.ac.th,gmail.com` | exact domain ตัวพิมพ์เล็ก คั่นด้วย comma ไม่ใส่ `@`, protocol หรือ wildcard |
+| `ADMIN_EMAILS` | `admin1@yru.ac.th,admin2@gmail.com` | คั่นด้วย comma; ทุกบัญชีต้องอยู่ใน `ALLOWED_DOMAINS` และต้องมี Users row หลัง bootstrap |
+| `GOOGLE_OAUTH_CLIENT_ID` | `1234567890-example.apps.googleusercontent.com` | OAuth 2.0 Client ID ชนิด Web application; เป็น ID ไม่ใช่ client secret |
 
 อย่าปล่อยให้ใช้ค่าเริ่มต้น `admin@example.com` จาก source บัญชีที่กด Run ครั้งแรกต้องอยู่ใน `ADMIN_EMAILS` และต้องเข้าถึง Sheet ได้
 
 `ADMIN_EMAILS` ใช้ bootstrap เฉพาะ setup สำเร็จครั้งแรก หลังจากนั้นให้เพิ่ม/แก้ Admin ผ่านหน้า **Admin > ผู้ใช้** และเฉพาะ Admin ที่ Active อยู่ใน Users sheet เท่านั้นจึงรัน setup ซ้ำได้ การแก้ Property หลัง bootstrap ไม่ได้เพิ่ม Admin row ให้อัตโนมัติ
 
-V1 รองรับ `ALLOWED_DOMAIN` แบบ exact domain เดียวเท่านั้น ไม่รวม secondary domain, subdomain หรือ alias โดยอัตโนมัติ ให้ใช้ primary email ที่ `Session.getActiveUser().getEmail()` คืนจริงใน `ADMIN_EMAILS`/Users และทำ identity pilot แยกทุกกลุ่มผู้ใช้ที่องค์กรจะเปิดให้ใช้งาน
+เมื่อ `ALLOWED_DOMAINS` มีค่า ระบบใช้รายการนี้และไม่รวมค่า `ALLOWED_DOMAIN`; หาก property ใหม่ไม่มีหรือว่างจึง fallback ไปใช้ `ALLOWED_DOMAIN` เดิมหนึ่งค่าเพื่อ backward compatibility เท่านั้น ไม่รวม secondary domain, subdomain หรือ alias โดยอัตโนมัติ หลัง migrate สำเร็จควรเก็บ `ALLOWED_DOMAIN` ไว้ใน restricted backup แล้วลบ property เก่าเพื่อลดความกำกวม
+
+กฎ authoritative email ที่ backend ใช้:
+
+- `@gmail.com` ต้องมี `email_verified=true`; `hd` ไม่จำเป็น
+- Google Workspace/non-Gmail ต้องมี `email_verified=true` และ `hd` ตรง exact domain หลัง `@`
+- Google Account ที่สมัครด้วยอีเมล third-party แต่ไม่มี `hd` ถูกปฏิเสธ แม้ `email_verified=true`
+
+Domain allowlist ไม่ได้สร้างสิทธิ์ใช้งาน ทุกบัญชีต้องมี Users row ตรง exact email, status `ACTIVE` และ role ที่เหมาะสม ระบบไม่ auto-provision visitor ให้คง `AUTO_PROVISION_USERS=false`
+
+Schema v3 ยังคงใช้ verified email เป็น authorization key เพื่อ backward compatibility แม้ token จะมี Google `sub` ด้วย เมื่อมีการ rename/reassign บัญชี ต้อง Inactive หรือแก้ Users row เดิมผ่านกระบวนการ Admin ก่อนให้เจ้าของอีเมลคนใหม่เข้าใช้ โดยเฉพาะ row ที่เป็น `ADMIN`; ห้ามถือว่าอีเมลที่นำกลับมาใช้ใหม่คือบุคคลเดิมโดยอัตโนมัติ
+
+### สร้าง OAuth Web Client สำหรับ Google Identity Services
+
+1. ใน Apps Script **Project Settings** ตรวจว่า script เชื่อมกับ standard Google Cloud project ที่องค์กรควบคุม; บันทึก project number ใน restricted change record
+2. ใน Google Cloud Console ตั้ง **OAuth consent / Google Auth Platform audience** เป็น **External** เพราะมี Gmail ภายนอก กรอกชื่อแอป อีเมล support และข้อมูล branding ตามนโยบายองค์กร
+3. ระหว่าง pilot ให้จัดสถานะ/test users ตาม policy ของ Google; ก่อนเปิดใช้วงกว้างให้ตรวจ publishing/verification state อีกครั้ง Browser sign-in ใช้เพียง basic identity (`openid`, `email`, `profile`) และต้องไม่ขอ Drive/Sheets ในนาม visitor
+4. สร้าง OAuth 2.0 Client ชนิด **Web application** ห้ามใช้ Desktop/Android/iOS client และไม่ต้องสร้างหรือเก็บ client secret ใน source
+5. เปิด `/exec` ของ project เดียวกัน เลือก frame ที่รัน HTML Service ใน browser DevTools แล้วอ่าน `window.location.origin` เพิ่มค่านั้นแบบ exact scheme + hostname + port (ถ้ามี) ใน **Authorized JavaScript origins** ห้ามใส่ path, query หรือ wildcard หากเป็นการติดตั้งใหม่ที่ยังไม่มี `/exec` ให้สร้าง staged Web app deployment หลังเพิ่ม source/manifest เพื่ออ่าน origin ก่อน แล้วค่อยกลับมาเพิ่ม Client ID/รัน setup; staged page อาจยังแสดง configuration error ได้ตามปกติ
+6. Apps Script ใช้ sandboxed iframe และ Google บังคับ exact origin จึงต้อง pilot origin นี้กับ Workspace และ Gmail บนทุก browser/device ที่รองรับ หาก origin ต่างกัน เปลี่ยนเอง หรือไม่สามารถลงทะเบียนได้ ให้หยุด rollout; ห้ามลด token validation หรือใช้ `ANYONE_ANONYMOUS` แก้ปัญหา
+7. คัดลอกเฉพาะ Client ID ลง `GOOGLE_OAUTH_CLIENT_ID` Script Property ห้าม commit Client ID, client secret, Sheet/Drive ID หรือ production URL ลง Git
 
 ค่าที่แนะนำก่อนเปิดใช้งาน:
 
 | Property | ค่าที่แนะนำ | ความหมาย |
 |---|---:|---|
-| `AUTO_PROVISION_USERS` | `false` | ผู้ใช้ต้องถูกเพิ่มโดย Admin ก่อน; ปลอดภัยที่สุด |
+| `AUTO_PROVISION_USERS` | `false` | บังคับ: ผู้ใช้ต้องถูกเพิ่มโดย Admin ก่อน; identity path ไม่ auto-provision |
 | `APP_NAME` | ชื่อระบบขององค์กร | ชื่อบน title/navigation |
 | `TIMEZONE` | `Asia/Bangkok` | timezone ธุรกิจ |
 | `LOCALE` | `th_TH` | locale ของ Sheet |
 | `MAX_IMAGE_BYTES` | `4194304` | รูปสูงสุด 4 MiB; ช่วงที่รองรับ 1,024–10,485,760 bytes |
-| `IMAGE_SHARING` | `DOMAIN_WITH_LINK` | policy การอ่านรูป |
+| `IMAGE_SHARING` | ผ่าน data-owner review | `DOMAIN_WITH_LINK` ไม่รองรับ Gmail; `ANYONE_WITH_LINK` เปิดกว้างตาม URL |
 
 ค่า optional/tuning ต่อไปนี้ไม่จำเป็นต้องเพิ่มหากใช้ค่าเริ่มต้น:
 
 | Property | ค่าเริ่มต้น | ช่วง/ข้อกำหนด |
 |---|---:|---|
-| `APP_VERSION` | `0.1.0` | ควรใช้ค่าจาก source และเปลี่ยนตาม release process เดียวกัน |
+| `APP_VERSION` | `0.2.0` | ควรใช้ค่าจาก source และเปลี่ยนตาม release process เดียวกัน |
 | `DEFAULT_PAGE_SIZE` | `24` | จำนวนเต็ม 1–100 และจะไม่เกิน `MAX_PAGE_SIZE` |
 | `MAX_PAGE_SIZE` | `100` | จำนวนเต็ม 1–100 |
 | `CACHE_TTL_SECONDS` | `120` | จำนวนเต็ม 30–21,600 วินาที |
@@ -201,7 +224,7 @@ V1 รองรับ `ALLOWED_DOMAIN` แบบ exact domain เดียวเ
 
 ## 7. Run Setup
 
-1. ใน Apps Script editor เลือก function `setupSystem` จาก function selector
+1. ใน Apps Script editor เลือก private function `setupSystem_` จาก function selector ฟังก์ชันนี้ตั้งใจให้รันจาก editor เท่านั้นและไม่ใช่ Web app/RPC endpoint
 2. กด **Run** ด้วยบัญชี Admin ที่กำหนดไว้
 3. ทำ authorization ตามข้อ 8 เมื่อระบบถาม แล้วรอจน execution จบ
 4. เปิด **Execution log** ต้องพบ event `SETUP_COMPLETED` พร้อม `requestId`, Spreadsheet ID, รายชื่อ managed sheets และ warnings
@@ -216,7 +239,9 @@ V1 รองรับ `ALLOWED_DOMAIN` แบบ exact domain เดียวเ
 - migration `001`, `002` และ `003` อย่างละหนึ่ง row
 - Settings ที่มี schema version `3`, app version, timezone และ `setup_completed_at`
 
-รัน `setupSystem()` ซ้ำอีกครั้งเพื่อพิสูจน์ idempotency จำนวน categories, admins และ migrations ต้องไม่เพิ่มซ้ำ ห้ามสร้าง header หรือแก้ migration checksum ด้วยมือ
+รัน `setupSystem_()` ซ้ำอีกครั้งเพื่อพิสูจน์ idempotency จำนวน categories, admins และ migrations ต้องไม่เพิ่มซ้ำ ห้ามสร้าง header หรือแก้ migration checksum ด้วยมือ
+
+`setupSystem_()` ใช้ `Session.getActiveUser()` เฉพาะยืนยัน release operator ที่กด Run ใน editor การใช้ Session นี้ไม่ใช่ visitor identity ของ Web app และห้ามนำกลับไปใช้ใน RPC
 
 ก่อน deploy อาจมี warning ว่ายังไม่พบ Web app URL ถือว่าปกติ หลังข้อ 9 ต้องตั้ง `WEB_APP_URL` และรัน setup ซ้ำจน warning นี้หาย
 
@@ -228,12 +253,13 @@ Manifest กำหนด least-privilege OAuth scopes ที่ source ใช้
 https://www.googleapis.com/auth/userinfo.email
 https://www.googleapis.com/auth/spreadsheets
 https://www.googleapis.com/auth/drive
+https://www.googleapis.com/auth/script.external_request
 ```
 
-ครั้งแรกที่รัน setup Google จะขอให้ผู้ deploy อนุญาต identity email, Google Sheets และ Google Drive ตามรายการนี้
+ครั้งแรกที่รัน setup Google จะขอให้ผู้ deploy อนุญาต identity email, Google Sheets, Google Drive และ external request ตามรายการนี้ `script.external_request` ใช้ให้ backend ดึง rotating JWKS จาก `https://www.googleapis.com/oauth2/v3/certs` เพื่อตรวจลายเซ็น ID token เท่านั้น
 
 1. ตรวจชื่อ Apps Script project และบัญชีให้ถูกต้อง
-2. เปิด **Overview > Project OAuth Scopes** แล้วเทียบให้ตรงกับสาม scope ใน manifest ก่อนกด Allow ระบบนี้ไม่ต้องใช้ Gmail, Calendar หรือ Contacts
+2. เปิด **Overview > Project OAuth Scopes** แล้วเทียบให้ตรงกับสี่ scope ใน manifest ก่อนกด Allow ระบบนี้ไม่ต้องใช้ Gmail, Calendar หรือ Contacts
 3. หาก Workspace Admin บล็อก scope หรือแอปภายใน ให้ส่ง Script ID และ scope ให้ Admin ตรวจ/อนุมัติ อย่าข้าม policy ด้วยบัญชีภายนอก
 4. เมื่อ source รุ่นใหม่เพิ่ม Google service ให้รัน function จาก editor อีกครั้งเพื่อ re-authorize ก่อนปล่อย version
 
@@ -243,30 +269,33 @@ https://www.googleapis.com/auth/drive
 
 1. กด **Deploy > New deployment**
 2. ที่ **Select type** เลือก **Web app**
-3. Description ใช้ข้อความที่ตรวจย้อนหลังได้ เช่น `v0.1.0 production rollout`
+3. Description ใช้ข้อความที่ตรวจย้อนหลังได้ เช่น `v0.2.0 external identity rollout`
 4. ตั้ง **Execute as** เป็น **Me** หรือบัญชีผู้ deploy (`USER_DEPLOYING`)
-5. ตั้ง **Who has access** เป็นผู้ใช้ภายใน Workspace domain เดียวกัน (`DOMAIN`)
+5. ตั้ง **Who has access** เป็น **Anyone** (`ANYONE`) ซึ่งใน Apps Script หมายถึง Google Account ที่ลงชื่อเข้าใช้แล้ว ตรวจค่าจาก manifest/deployment record ว่าไม่ใช่ `ANYONE_ANONYMOUS`
 6. กด **Deploy** และคัดลอก Web app URL ที่ลงท้ายด้วย `/exec`
 7. เก็บ deployment ID, `/exec` URL, source commit, version, ผู้ deploy และวันเวลาไว้ใน change record ที่จำกัดสิทธิ์
 8. เพิ่ม Script Property `WEB_APP_URL` เป็น `/exec` URL เต็ม ห้ามมี query string, fragment หรือ `/dev`
-9. รัน `setupSystem()` ซ้ำ แล้วตรวจว่าไม่มี warning เรื่อง Web app URL
+9. รัน `setupSystem_()` ซ้ำ แล้วตรวจว่าไม่มี warning เรื่อง Web app URL
 10. เปิด `/exec` ด้วย Admin และตรวจว่า QR ในหน้า Equipment Detail สร้าง URL origin/path เดียวกับ deployment
 
 URL `/dev` จาก **Test deployments** เปิดได้เฉพาะผู้มีสิทธิ์แก้ script และใช้ code ล่าสุด จึงใช้ตรวจระหว่างพัฒนาเท่านั้น ห้ามแจกเป็น production URL
 
-### Identity pilot ที่ต้องผ่านก่อนเปิดใช้
+### Google Identity Services และ iframe-origin pilot ที่ต้องผ่านก่อนเปิดใช้
 
-หลัง deploy ให้ Admin เพิ่มบัญชี User ทดสอบในหน้า Admin ก่อน แล้วเปิด `/exec` ด้วย browser profile ของ User คนนั้น ระบบต้องแสดงอีเมลของ User จริง ไม่ใช่อีเมลผู้ deploy
+กรณีอัปเกรดจากรุ่น domain-only อย่าเพิ่ม Gmail ผ่าน UI รุ่นเดิม เพราะรุ่นนั้นปฏิเสธโดเมนภายนอก ให้คง deployment production เดิมไว้ก่อน ตั้ง properties/อัปโหลด source/รัน `setupSystem_()` แล้วสร้าง deployment ชั่วคราวสำหรับ pilot ด้วย `USER_DEPLOYING` + `ANYONE` จาก version ใหม่ จากนั้นให้ YRU Admin เดิมลงชื่อเข้าใช้ pilot ผ่าน GIS, เพิ่ม Gmail test account เป็น Users row ที่ `ACTIVE` ผ่านหน้า Admin และทดสอบ Workspace/Gmail ให้ผ่านก่อนแก้ deployment production เดิม หลัง production smoke test ผ่านแล้วให้ archive deployment pilot เพื่อลด URL ที่เปิดใช้งานอยู่
 
-หากระบบแจ้งว่าไม่พบอีเมลผู้ใช้งาน:
+ให้ตรวจใน DevTools ของ production page ว่า frame ที่เรียก GIS มี `window.location.origin` ตรงกับ Authorized JavaScript origin แบบ exact ห้ามอนุมานจาก `/exec` top-level URL เพราะ HTML Service รัน active content ใน iframe แยก origin จากนั้นทดสอบอย่างน้อย Chrome/Edge หรือ browser ที่องค์กรรองรับ รวม desktop และโทรศัพท์ การผ่านบัญชีเดียว/browser เดียวไม่เพียงพอเป็นหลักฐานว่า origin เสถียร
 
-1. ตรวจว่า User และผู้ deploy อยู่ Workspace domain เดียวกัน
-2. ตรวจ deployment ว่า access จำกัด domain และเปิดด้วย `/exec`
-3. ออกจากบัญชี Google อื่นหรือใช้ browser profile แยกเพื่อไม่ให้เลือกบัญชีผิด
-4. ให้ Workspace Admin ตรวจ identity/session policy
-5. หยุด rollout หากยังได้อีเมลว่าง ห้ามเปลี่ยนเป็น EffectiveUser, anonymous หรือ public access
+หากปุ่ม sign-in ไม่ทำงาน, popup แสดง origin/client error หรือ RPC ตอบ `UNAUTHENTICATED`:
 
-หากองค์กรจำเป็นต้องใช้ execute-as-user ต้อง review สถาปัตยกรรมใหม่ เพราะผู้ใช้ทุกคนจะต้อง authorize scopes และต้องมีสิทธิ์เข้าถึง Sheet/Drive ซึ่งเปลี่ยน data-isolation model ของ V1
+1. ตรวจ `GOOGLE_OAUTH_CLIENT_ID` ว่าเป็น Web application Client ID เดียวกับ backend audience และไม่มีช่องว่าง
+2. ตรวจ OAuth audience/consent/publishing/test-user policy และ Google Workspace third-party app controls
+3. ตรวจ Authorized JavaScript origin ให้ตรงกับ `window.location.origin` ของ HTML Service frame แบบ exact; origin ห้ามมี path/query/wildcard
+4. ใช้ browser profile แยกเพื่อเลือกบัญชีถูกต้อง แล้วตรวจเวลาเครื่องเพราะ token หมดอายุ/ยังไม่ถึงเวลาใช้จะถูกปฏิเสธ
+5. ตรวจ Executions/structured log ด้วย `requestId`; ห้าม paste ID token ลง log, issue หรือ chat
+6. หยุด rollout หาก iframe origin ไม่เสถียรหรือ token ยังตรวจไม่ผ่าน ห้ามเปลี่ยนเป็น Session identity, EffectiveUser, client email หรือ `ANYONE_ANONYMOUS`
+
+หาก exact iframe origin ใช้งานกับ GIS ไม่เสถียร ต้อง review สถาปัตยกรรมเพื่อย้าย sign-in surface ไปยัง HTTPS origin ที่องค์กรควบคุม หากเปลี่ยนเป็น execute-as-user ผู้ใช้ทุกคนจะต้อง authorize scopes และต้องมีสิทธิ์เข้าถึง Sheet/Drive ซึ่งเปลี่ยน data-isolation model เช่นกัน
 
 ## 10. ทดสอบ User
 
@@ -291,7 +320,7 @@ URL `/dev` จาก **Test deployments** เปิดได้เฉพาะ�
 2. สร้าง/แก้ category และตรวจ unique name/prefix/status
 3. เพิ่ม User, เปลี่ยน role/status และยืนยันว่า User ปกติเรียก admin action ไม่ได้
 4. เพิ่ม Equipment พร้อม Included Items; ตรวจ Asset ID อัตโนมัติและ duplicate serial validation
-5. อัปโหลด/เปลี่ยนรูป JPEG, PNG หรือ WebP แล้วเปิดรูปจากบัญชี User ใน domain; ยืนยันว่า external/signed-out เปิดไม่ได้ และบันทึกว่า same-domain link holder เป็นขอบเขตที่องค์กรยอมรับ
+5. อัปโหลด/เปลี่ยนรูป JPEG, PNG หรือ WebP แล้วเปิด URL จาก Workspace, Gmail และ signed-out profile ผลต้องตรงกับ policy ที่อนุมัติ: `DOMAIN_WITH_LINK` กัน Gmail/signed-out ส่วน `ANYONE_WITH_LINK` ยอมให้ผู้ถือ URL ทุกคนดูได้
 6. Download QR sticker, พิมพ์และ scan ด้วย Android/iOS; QR ต้องเปิด exact Equipment Detail และไม่ trigger action
 7. ทำ lifecycle `request → approve → checkout → return request → inspected return`
 8. ตรวจ Included Items ทุกชิ้นและทดสอบ normal/damaged/maintenance/lost disposition ตามกติกา
@@ -307,12 +336,12 @@ URL `/dev` จาก **Test deployments** เปิดได้เฉพาะ�
 เปิดให้ผู้ใช้จริงได้เมื่อครบทุกข้อ:
 
 - `npm run test` ผ่านทั้งหมดบน source commit เดียวกับที่ deploy
-- `setupSystem()` ครั้งล่าสุดสำเร็จ ไม่มี configuration warning และการ upload จริงยืนยัน Drive sharing policy แล้ว
-- Identity pilot ยืนยัน Active User ของ User และ Admin คนละบัญชีได้ถูกต้อง
+- `setupSystem_()` ครั้งล่าสุดสำเร็จ ไม่มี configuration warning และการ upload จริงยืนยัน Drive sharing policy แล้ว
+- Identity pilot ยืนยัน Google ID token, verified email, Users row, status และ role ของ Workspace User, Gmail User และ Admin ได้ถูกต้อง
 - User/Admin lifecycle, Drive image, QR physical scan และ responsive checks ผ่าน
 - Integrity audit ไม่มี Error และ Operations ไม่มีรายการ `STARTED` ที่ไม่ทราบสาเหตุ
 - User ทั่วไปไม่มี direct access ต่อ Sheet/folder ทุก role และไม่มีสิทธิ์แฝงผ่าน group/link; Apps Script Editor จำกัดเฉพาะ release operators
-- เจ้าของข้อมูลยอมรับว่า `DOMAIN_WITH_LINK` อนุญาตสมาชิก domain ที่มี URL ดูรูปได้แม้ไม่มีสิทธิ์เข้าแอป
+- เจ้าของข้อมูลเลือกและยอมรับ image boundary แล้ว: `DOMAIN_WITH_LINK` ไม่รองรับ Gmail หรือ `ANYONE_WITH_LINK` เปิดภาพแก่ผู้ถือ URL โดยไม่ผ่าน Users/token
 - บัญชีผู้ deploy เป็นบัญชีองค์กรระยะยาว มี backup operator และมีแผน redeploy กรณีเจ้าของถูกปิด เพราะ versioned deployment เดิมโอน ownership โดยตรงไม่ได้
 - บันทึก source commit, Apps Script version, deployment ID และ `/exec` URL ใน change record แล้ว
 - ยังไม่พิมพ์ QR จำนวนมากจนกว่าจะยืนยัน URL production คงที่
@@ -321,11 +350,12 @@ URL `/dev` จาก **Test deployments** เปิดได้เฉพาะ�
 
 1. หยุดหรือแจ้ง maintenance window สำหรับ mutation สำคัญ
 2. สำรอง Sheet และรัน Integrity audit ก่อนเปลี่ยนรุ่น
-3. อัปโหลด source รุ่นใหม่เข้า Apps Script project เดิมให้ครบ 43 runtime files และเทียบ inventory สองทาง ไฟล์ `.gs/.html` เก่าที่ถูกถอดจาก repository ต้องผ่าน review แล้วนำออกจาก project ด้วย เพราะไฟล์ `.gs` ที่ค้างยังเป็น global callable code ได้
-4. อ่าน [MIGRATING.md](MIGRATING.md) แล้วรัน `setupSystem()` เพื่อใช้ additive migrations
+3. อัปโหลด source รุ่นใหม่เข้า Apps Script project เดิมให้ครบ 44 runtime files และเทียบ inventory สองทาง ไฟล์ `.gs/.html` เก่าที่ถูกถอดจาก repository ต้องผ่าน review แล้วนำออกจาก project ด้วย เพราะไฟล์ `.gs` ที่ค้างยังเป็น global callable code ได้
+4. อ่าน [MIGRATING.md](MIGRATING.md) แล้วรัน private editor function `setupSystem_()` เพื่อใช้ additive migrations
 5. ที่ **Deploy > Manage deployments** เลือก deployment production เดิม แล้วกด **Edit**
-6. เลือก **New version**, ใส่ description ที่อ้าง source commit และกด Deploy
-7. ตรวจว่า deployment ID และ `/exec` URL ไม่เปลี่ยน จากนั้นทำ smoke test User/Admin/QR
+6. ตรวจ **Execute as** เป็น **Me** (`USER_DEPLOYING`) และเปลี่ยน **Who has access** จาก **domain** เป็น **Anyone** (`ANYONE` สำหรับบัญชี Google ที่ลงชื่อเข้าใช้แล้ว); ต้องไม่ใช่ `ANYONE_ANONYMOUS`
+7. เลือก **New version**, ใส่ description ที่อ้าง source commit และกด Deploy
+8. ตรวจว่า deployment ID และ `/exec` URL ไม่เปลี่ยน จากนั้นทำ smoke test Workspace User, Gmail User, Admin และ QR
 
 อย่าสร้าง deployment production ใหม่ทุก release เพราะ URL จะเปลี่ยนและ QR sticker เดิมจะชี้ผิดที่ Version ของ Apps Script เป็น snapshot ที่แก้ไม่ได้ แต่ deployment เดิมสามารถชี้ไป version ใหม่โดยรักษา URL/ID เดิม
 
@@ -370,7 +400,7 @@ Google เปลี่ยน quota ได้โดยไม่แจ้งล่
 
 | อาการ/รหัส | ตรวจสอบและแก้ไข |
 |---|---|
-| `UNAUTHENTICATED` / ไม่พบอีเมล | ตรวจ account/browser profile, same-domain identity และ deployment access; หยุด rollout ถ้า Active User ยังว่าง |
+| `UNAUTHENTICATED` / ลงชื่อเข้าใช้ไม่ผ่าน | ตรวจ Web OAuth Client ID, exact Authorized JavaScript origin, token audience/expiry, GIS console error และ deployment access `ANYONE`; ไม่ใช้ Active User เป็น visitor identity |
 | `FORBIDDEN` | เพิ่ม/เปิดใช้งาน Users row หรือ role ผ่าน Admin; อย่าแก้ role จาก browser/client |
 | `CONFIG_ERROR` ที่ Sheet | ตรวจ `SPREADSHEET_ID` และสิทธิ์ผู้ deploy แล้วรัน setup |
 | `CONFIG_ERROR` ที่ Drive | ตรวจ `DRIVE_FOLDER_ID`, folder ไม่อยู่ Trash และสิทธิ์ผู้ deploy |
@@ -385,7 +415,14 @@ Google เปลี่ยน quota ได้โดยไม่แจ้งล่
 ## เอกสารทางการที่ใช้อ้างอิง
 
 - [Deploy Apps Script as a web app](https://developers.google.com/apps-script/guides/web)
+- [Web app manifest access and execute-as values](https://developers.google.com/apps-script/manifest/web-app-api-executable)
 - [Session and Active User identity](https://developers.google.com/apps-script/reference/base/session)
+- [Create a Google Identity Services Web client](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid)
+- [Google Identity Services JavaScript reference](https://developers.google.com/identity/gsi/web/reference/js-reference)
+- [Verify a Google ID token on the backend](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token)
+- [Google OpenID Connect claims](https://developers.google.com/identity/openid-connect/openid-connect)
+- [Apps Script HTML Service iframe restrictions](https://developers.google.com/apps-script/guides/html/restrictions)
+- [Google Identity Services FedCM migration](https://developers.google.com/identity/gsi/web/guides/fedcm-migration)
 - [Manage Script Properties](https://developers.google.com/apps-script/guides/properties)
 - [Create and manage versioned deployments](https://developers.google.com/apps-script/concepts/deployments)
 - [Apps Script authorization](https://developers.google.com/apps-script/guides/services/authorization)

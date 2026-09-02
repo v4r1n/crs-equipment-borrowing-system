@@ -1,5 +1,5 @@
-function listCategoriesForAdmin_(query) {
-  requireAdmin_(true);
+function listCategoriesForAdmin_(query, actor) {
+  assertAdminActor_(actor);
   query = query || {};
   var pageQuery = normalizePageQuery_(
     query,
@@ -25,7 +25,7 @@ function createCategory_(input, actor) {
   input = input || {};
   var commandId = requireCommandId_(input.command_id);
   var normalized = normalizeCategoryInput_(input, null);
-  return withAdminMutation_(function (lockedActor) {
+  return withAdminMutation_(actor, function (lockedActor) {
     if (normalized.sort_order === null) {
       var pendingOperation = findRecordById_(SHEETS.OPERATIONS, 'operation_id', commandId);
       normalized.sort_order = pendingOperation
@@ -91,7 +91,7 @@ function updateCategory_(input, actor) {
   input = input || {};
   var categoryId = requireCategoryRecordId_(input.category_id);
   var commandId = requireCommandId_(input.command_id);
-  return withAdminMutation_(function (lockedActor) {
+  return withAdminMutation_(actor, function (lockedActor) {
     var current = findRecordById_(SHEETS.CATEGORIES, 'category_id', categoryId);
     assertApp_(current, 'NOT_FOUND', 'ไม่พบหมวดหมู่ที่ต้องการแก้ไข', null, false);
     var normalized = normalizeCategoryInput_(input, current);

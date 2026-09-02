@@ -8,7 +8,7 @@
 - Backend: Google Apps Script V8
 - Database: Google Sheets
 - File storage: Google Drive
-- Authentication: Google Workspace session
+- Authentication: Google Identity Services พร้อมตรวจ Google ID token ฝั่ง Apps Script
 - QR: ไลบรารีโอเพนซอร์สบนฝั่งเบราว์เซอร์
 
 ## ขอบเขต V1
@@ -27,12 +27,12 @@
 
 ## ข้อกำหนดสำคัญด้านบัญชี
 
-V1 ออกแบบสำหรับผู้ใช้ภายใน Google Workspace domain เดียวกัน การ deploy ต้องจำกัดผู้เข้าถึงตาม domain และต้องทดสอบว่า `Session.getActiveUser().getEmail()` คืนอีเมลของผู้ใช้จริง หากเป็นบัญชี Gmail ส่วนตัวหรือข้าม domain อาจได้อีเมลว่าง ซึ่งระบบจะปฏิเสธการเข้าใช้งานตามหลัก fail closed
+ระบบรองรับ Google Workspace และบัญชี `@gmail.com` ตาม exact allowlist ใน `ALLOWED_DOMAINS` โดย fallback ไปอ่าน `ALLOWED_DOMAIN` เดิมเมื่อยังไม่ได้ตั้งค่ารายการใหม่ Browser รับ Google ID token จาก Google Identity Services และทุก RPC ส่ง token ให้ backend ตรวจ signature, issuer, audience, expiry และอีเมลที่ Google ยืนยัน ก่อนตรวจ Users row, `ACTIVE` status และ role อีกชั้น ระบบไม่ใช้ `Session.getActiveUser()` เป็น visitor identity, ไม่สร้าง Users row อัตโนมัติ และ fail closed เมื่อหลักฐานหรือสิทธิ์ไม่ครบ
 
 ## การติดตั้ง
 
-ทำตาม [คู่มือติดตั้งและ Deploy](docs/DEPLOYMENT.md) ซึ่งครอบคลุมการสร้าง Google Sheet/Drive folder, นำไฟล์ runtime 43 ไฟล์เข้า Apps Script, ตั้ง Script Properties, bootstrap Admin, authorize, deploy แบบ domain-only, ทดสอบ User/Admin, rollback และดูแลหลังเปิดใช้งาน
+ทำตาม [คู่มือติดตั้งและ Deploy](docs/DEPLOYMENT.md) ซึ่งครอบคลุมการสร้าง Google Sheet/Drive folder, นำไฟล์ runtime 44 ไฟล์เข้า Apps Script, สร้าง Web OAuth Client, ตั้ง Script Properties, bootstrap Admin, authorize, deploy แบบ `USER_DEPLOYING` + `ANYONE` สำหรับผู้ที่ลงชื่อเข้าใช้แล้ว, ทดสอบ Workspace/Gmail, rollback และดูแลหลังเปิดใช้งาน ห้ามใช้ `ANYONE_ANONYMOUS`
 
 ## สถานะ
 
-Source สำหรับ V1 ทั้ง 7 phases เสร็จแล้วบน branch `codex/initial-v1` และอยู่ในสถานะ release candidate การ deploy ใน Google Workspace, identity pilot และ live acceptance ยังต้องทำโดยองค์กรด้วยบัญชีและทรัพยากรจริงก่อนประกาศ production
+Source สำหรับ V1 ทั้ง 7 phases เสร็จแล้วบน branch `codex/initial-v1`; deployment แบบ domain-only เคยผ่านการทดสอบใน `yru.ac.th` แล้ว ส่วน release ที่เพิ่ม external Google Account ยังต้อง redeploy เป็น version ใหม่และผ่าน OAuth iframe-origin, Workspace/Gmail identity และ live acceptance ก่อนประกาศ production

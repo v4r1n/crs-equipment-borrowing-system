@@ -53,6 +53,59 @@ test('bootstrap fails closed and keeps the admin route role-gated', async ({ pag
   await expect(page.locator('[data-access-title]')).toContainText('บัญชี');
   await expect(page.locator('[data-access-message]')).toContainText('ปิดใช้งาน');
 
+  const bootstrapCallCount = () => page.evaluate(() =>
+    window.__CRS_TEST__.calls.filter((call) => call.method === 'getAppBootstrap').length);
+  expect(await bootstrapCallCount()).toBe(1);
+  await page.locator('[data-action="retry-bootstrap"]').click();
+  await page.waitForTimeout(150);
+  expect(await bootstrapCallCount()).toBe(1);
+  await page.locator('[data-test-google-signin]').click();
+  await expect.poll(bootstrapCallCount).toBe(2);
+
+  expect(pageErrors).toEqual([]);
+});
+
+test('Google Identity Services supplies a nonblank ID token to every browser RPC', async ({ page }) => {
+  const pageErrors = collectPageErrors(page);
+  const externalGisRequests = [];
+  page.on('request', (request) => {
+    if (request.url().startsWith('https://accounts.google.com/gsi/')) {
+      externalGisRequests.push(request.url());
+    }
+  });
+
+  await page.goto('/?view=dashboard&role=admin');
+  await waitForApplication(page, 'dashboard');
+  await page.locator('[data-route="equipment"]').first().click();
+  await waitForApplication(page, 'equipment');
+
+  const identityState = await page.evaluate(() => window.__CRS_TEST__.googleIdentity);
+  expect(identityState.initialized).toBe(true);
+  expect(identityState.buttonRendered).toBe(true);
+  expect(identityState.credentialCount).toBeGreaterThanOrEqual(1);
+  expect(identityState.clientId).toMatch(/\.apps\.googleusercontent\.com$/);
+
+  const calls = await page.evaluate(() => window.__CRS_TEST__.calls);
+  expect(calls.length).toBeGreaterThanOrEqual(3);
+  expect(calls.every((call) => call.idToken === 'test-google-id-token')).toBe(true);
+  expect(externalGisRequests).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});
+
+test('an expired RPC token requires a fresh credential and re-bootstrap before restoring the shell', async ({ page }) => {
+  const pageErrors = collectPageErrors(page);
+  await page.goto('/?view=dashboard&role=admin&expire=getDashboard');
+
+  await expect(page.locator('#access-state')).toBeVisible();
+  await expect(page.locator('#app-shell')).toBeHidden();
+  await page.locator('[data-test-google-signin]').click();
+  await waitForApplication(page, 'dashboard');
+
+  const identityState = await page.evaluate(() => window.__CRS_TEST__.googleIdentity);
+  expect(identityState.credentialCount).toBe(2);
+  const calls = await page.evaluate(() => window.__CRS_TEST__.calls);
+  expect(calls.filter((call) => call.method === 'getAppBootstrap')).toHaveLength(2);
+  expect(calls.filter((call) => call.method === 'getDashboard')).toHaveLength(2);
   expect(pageErrors).toEqual([]);
 });
 
