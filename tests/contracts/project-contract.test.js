@@ -39,7 +39,11 @@ function loadServerContext() {
 test('all server, browser, and manifest sources compile', () => {
   const serverFiles = sourceFiles('.gs');
   for (const file of serverFiles) {
-    new vm.Script(fs.readFileSync(path.join(SRC, file), 'utf8'), { filename: file });
+    const source = fs.readFileSync(path.join(SRC, file), 'utf8');
+    new vm.Script(source, { filename: file });
+    assert.doesNotMatch(source,
+      /\b(?:0[xX][\da-fA-F]+|0[bB][01]+|0[oO][0-7]+|\d+)n\b/,
+      `${file} must avoid BigInt literal syntax rejected by the Apps Script parser`);
   }
   new vm.Script(
     serverFiles.map((file) => fs.readFileSync(path.join(SRC, file), 'utf8')).join('\n'),
