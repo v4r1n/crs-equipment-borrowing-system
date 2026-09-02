@@ -223,6 +223,9 @@ function findGoogleIdentityJwk_(keys, kid) {
 
 function verifyRs256Signature_(signedContent, encodedSignature, jwk) {
   try {
+    var bigintZero = BigInt(0);
+    var bigintOne = BigInt(1);
+    var bigintThree = BigInt(3);
     var modulusBytes = decodeBase64UrlBytes_(jwk.n);
     var exponentBytes = decodeBase64UrlBytes_(jwk.e);
     var signatureBytes = decodeBase64UrlBytes_(encodedSignature);
@@ -233,8 +236,9 @@ function verifyRs256Signature_(signedContent, encodedSignature, jwk) {
     var modulus = bytesToBigInt_(modulusBytes);
     var exponent = bytesToBigInt_(exponentBytes);
     var signature = bytesToBigInt_(signatureBytes);
-    if (modulus <= 0n || exponent < 3n || (exponent & 1n) !== 1n ||
-        signature < 0n || signature >= modulus) return false;
+    if (modulus <= bigintZero || exponent < bigintThree ||
+        (exponent & bigintOne) !== bigintOne ||
+        signature < bigintZero || signature >= modulus) return false;
     var encodedMessage = bigIntToFixedBytes_(modularExponentiation_(signature, exponent, modulus),
       modulusBytes.length);
     if (!encodedMessage || encodedMessage[0] !== 0x00 || encodedMessage[1] !== 0x01) return false;
@@ -307,12 +311,14 @@ function bigIntToFixedBytes_(value, length) {
 }
 
 function modularExponentiation_(base, exponent, modulus) {
-  var result = 1n;
+  var bigintZero = BigInt(0);
+  var bigintOne = BigInt(1);
+  var result = bigintOne;
   var factor = base % modulus;
   var power = exponent;
-  while (power > 0n) {
-    if (power & 1n) result = (result * factor) % modulus;
-    power >>= 1n;
+  while (power > bigintZero) {
+    if (power & bigintOne) result = (result * factor) % modulus;
+    power >>= bigintOne;
     factor = (factor * factor) % modulus;
   }
   return result;
