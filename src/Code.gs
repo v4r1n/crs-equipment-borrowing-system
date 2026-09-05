@@ -40,7 +40,6 @@ function doGet(event) {
   var template = HtmlService.createTemplateFromFile('index');
   template.initialView = navigation.view;
   template.initialAssetId = navigation.assetId;
-  template.googleOAuthClientId = getRuntimeConfig_().GOOGLE_OAUTH_CLIENT_ID;
 
   return template.evaluate()
     .setTitle(getPublicAppTitle_())

@@ -14,11 +14,17 @@ const {
 test('authentication and admin authorization are enforced by server endpoints', () => {
   const harness = bootstrappedHarness();
 
-  harness.setActiveEmail('unknown@example.com');
-  expectError(harness.invoke('listEquipment', {}), 'FORBIDDEN');
+  const unknownSignIn = harness.signInAs('unknown@example.com');
+  expectError(unknownSignIn.finish.pollResponse, 'FORBIDDEN');
+  expectError(harness.invoke('listEquipment', {}), 'UNAUTHENTICATED');
 
-  harness.setActiveEmail('outsider@other.example');
-  expectError(harness.invoke('listEquipment', {}), 'FORBIDDEN');
+  const outsideSignIn = harness.signInAs('outsider@other.example');
+  expectError(outsideSignIn.finish.pollResponse, 'FORBIDDEN');
+  expectError(harness.invoke('listEquipment', {}), 'UNAUTHENTICATED');
+
+  ['', 'not-a-session', `session1_${'A'.repeat(43)}`].forEach((sessionToken) => {
+    expectError(harness.invokeWithToken('listEquipment', sessionToken, {}), 'UNAUTHENTICATED');
+  });
 
   harness.setActiveEmail('admin@example.com');
   const user = createUser(harness, { suffix: 'permissions' });
@@ -52,8 +58,9 @@ test('authentication and admin authorization are enforced by server endpoints', 
     suffix: 'inactive',
     status: 'INACTIVE'
   });
-  harness.setActiveEmail(inactive.email);
-  expectError(harness.invoke('getDashboard'), 'USER_DISABLED');
+  const inactiveSignIn = harness.signInAs(inactive.email);
+  expectError(inactiveSignIn.finish.pollResponse, 'USER_DISABLED');
+  expectError(harness.invoke('getDashboard'), 'UNAUTHENTICATED');
 });
 
 test('all domain IDs use fixed-width validators', () => {

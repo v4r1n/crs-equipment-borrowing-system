@@ -9,7 +9,7 @@ var SHA256_DIGEST_INFO_PREFIX_ = Object.freeze([
   0x00, 0x04, 0x20
 ]);
 
-function verifyGoogleIdToken_(idToken) {
+function verifyGoogleIdToken_(idToken, expectedNonce) {
   var config = getRuntimeConfig_();
   var clientId = normalizeWhitespace_(config.GOOGLE_OAUTH_CLIENT_ID);
   assertApp_(isGoogleOAuthClientId_(clientId),
@@ -38,7 +38,7 @@ function verifyGoogleIdToken_(idToken) {
   assertApp_(verifyRs256Signature_(segments[0] + '.' + segments[1], segments[2], jwk),
     'UNAUTHENTICATED', 'ข้อมูลการลงชื่อเข้าใช้ไม่ถูกต้อง กรุณาลงชื่อเข้าใช้อีกครั้ง', null, false);
 
-  validateGoogleIdentityClaims_(claims, clientId);
+  validateGoogleIdentityClaims_(claims, clientId, expectedNonce);
   var email = normalizeEmail_(claims.email);
   var emailDomain = email.slice(email.lastIndexOf('@') + 1);
   assertApp_(allowedDomains.indexOf(emailDomain) !== -1, 'FORBIDDEN',
@@ -60,7 +60,7 @@ function isGoogleOAuthClientId_(value) {
   );
 }
 
-function validateGoogleIdentityClaims_(claims, clientId) {
+function validateGoogleIdentityClaims_(claims, clientId, expectedNonce) {
   assertApp_(claims && typeof claims === 'object' && !Array.isArray(claims),
     'UNAUTHENTICATED', 'ข้อมูลการลงชื่อเข้าใช้ไม่ถูกต้อง กรุณาลงชื่อเข้าใช้อีกครั้ง', null, false);
   assertApp_(claims.iss === 'accounts.google.com' || claims.iss === 'https://accounts.google.com',
@@ -98,6 +98,10 @@ function validateGoogleIdentityClaims_(claims, clientId) {
     'UNAUTHENTICATED', 'ข้อมูลบัญชี Google ไม่สมบูรณ์', null, false);
   assertApp_(claims.email_verified === true && isSafeEmailValue_(normalizeEmail_(claims.email)),
     'UNAUTHENTICATED', 'Google ยังไม่ได้ยืนยันอีเมลของบัญชีนี้', null, false);
+  var nonce = String(expectedNonce || '').trim();
+  assertApp_(OAUTH_NONCE_PATTERN_.test(nonce) && typeof claims.nonce === 'string' &&
+    secureStringEquals_(claims.nonce, nonce), 'UNAUTHENTICATED',
+  'OIDC nonce ไม่ตรงกับคำขอลงชื่อเข้าใช้ กรุณาลองใหม่อีกครั้ง', null, false);
 }
 
 function isGoogleAuthoritativeEmail_(claims, emailDomain) {

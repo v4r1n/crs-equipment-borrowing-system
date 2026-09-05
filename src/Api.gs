@@ -1,17 +1,17 @@
-function executeUserRpc_(idToken, handler) {
+function executeUserRpc_(sessionToken, handler) {
   return executeSafely_(function () {
-    return handler(requireUser_(idToken));
+    return handler(requireUser_(sessionToken));
   });
 }
 
-function executeAdminRpc_(idToken, handler) {
+function executeAdminRpc_(sessionToken, handler) {
   return executeSafely_(function () {
-    return handler(requireAdmin_(idToken));
+    return handler(requireAdmin_(sessionToken));
   });
 }
 
-function getAppBootstrap(idToken) {
-  return executeUserRpc_(idToken, function (user) {
+function getAppBootstrap(sessionToken) {
+  return executeUserRpc_(sessionToken, function (user) {
     var config = getRuntimeConfig_();
     return {
       app: {
@@ -36,188 +36,188 @@ function getAppBootstrap(idToken) {
   });
 }
 
-function getDashboard(idToken) {
-  return executeUserRpc_(idToken, function (user) {
+function getDashboard(sessionToken) {
+  return executeUserRpc_(sessionToken, function (user) {
     return user.role === USER_ROLE.ADMIN ? getAdminDashboard_(user) : getUserDashboard_(user);
   });
 }
 
-function listEquipment(idToken, query) {
-  return executeUserRpc_(idToken, function (user) {
+function listEquipment(sessionToken, query) {
+  return executeUserRpc_(sessionToken, function (user) {
     return listEquipment_(query || {}, user);
   });
 }
 
-function getEquipmentDetail(idToken, assetId) {
-  return executeUserRpc_(idToken, function (user) {
+function getEquipmentDetail(sessionToken, assetId) {
+  return executeUserRpc_(sessionToken, function (user) {
     return getEquipmentDetail_(assetId, user);
   });
 }
 
-function listCategories(idToken) {
-  return executeUserRpc_(idToken, function () {
+function listCategories(sessionToken) {
+  return executeUserRpc_(sessionToken, function () {
     return activeCategoryDtos_();
   });
 }
 
-function createBorrowRequest(idToken, input) {
-  return executeUserRpc_(idToken, function (actor) {
+function createBorrowRequest(sessionToken, input) {
+  return executeUserRpc_(sessionToken, function (actor) {
     return createBorrowRequest_(input || {}, actor);
   });
 }
 
-function listMyBorrowing(idToken, query) {
-  return executeUserRpc_(idToken, function (user) {
+function listMyBorrowing(sessionToken, query) {
+  return executeUserRpc_(sessionToken, function (user) {
     return listMyBorrowing_(query || {}, user);
   });
 }
 
-function getBorrowDetail(idToken, borrowId) {
-  return executeUserRpc_(idToken, function (user) {
+function getBorrowDetail(sessionToken, borrowId) {
+  return executeUserRpc_(sessionToken, function (user) {
     return getBorrowDetail_(borrowId, user);
   });
 }
 
-function requestReturn(idToken, input) {
-  return executeUserRpc_(idToken, function (actor) {
+function requestReturn(sessionToken, input) {
+  return executeUserRpc_(sessionToken, function (actor) {
     return requestReturn_(input || {}, actor);
   });
 }
 
-function listMyHistory(idToken, query) {
-  return executeUserRpc_(idToken, function (user) {
+function listMyHistory(sessionToken, query) {
+  return executeUserRpc_(sessionToken, function (user) {
     return listHistoryForUser_(query || {}, user);
   });
 }
 
-function adminGetDashboard(idToken) {
-  return executeAdminRpc_(idToken, function (actor) {
+function adminGetDashboard(sessionToken) {
+  return executeAdminRpc_(sessionToken, function (actor) {
     return getAdminDashboard_(actor);
   });
 }
 
-function adminListBorrowing(idToken, query) {
-  return executeAdminRpc_(idToken, function (actor) {
+function adminListBorrowing(sessionToken, query) {
+  return executeAdminRpc_(sessionToken, function (actor) {
     return listBorrowingForAdmin_(query || {}, actor);
   });
 }
 
-function adminApproveBorrow(idToken, input) {
-  return executeAdminRpc_(idToken, function (actor) {
+function adminApproveBorrow(sessionToken, input) {
+  return executeAdminRpc_(sessionToken, function (actor) {
     return approveBorrow_(input || {}, actor);
   });
 }
 
-function adminRejectBorrow(idToken, input) {
-  return executeAdminRpc_(idToken, function (actor) {
+function adminRejectBorrow(sessionToken, input) {
+  return executeAdminRpc_(sessionToken, function (actor) {
     return rejectBorrow_(input || {}, actor);
   });
 }
 
-function adminCheckoutBorrow(idToken, input) {
-  return executeAdminRpc_(idToken, function (actor) {
+function adminCheckoutBorrow(sessionToken, input) {
+  return executeAdminRpc_(sessionToken, function (actor) {
     return checkoutBorrow_(input || {}, actor);
   });
 }
 
-function adminCompleteReturn(idToken, input) {
-  return executeAdminRpc_(idToken, function (actor) {
+function adminCompleteReturn(sessionToken, input) {
+  return executeAdminRpc_(sessionToken, function (actor) {
     return completeReturn_(input || {}, actor);
   });
 }
 
-function adminCreateEquipment(idToken, input) {
-  return executeAdminRpc_(idToken, function (actor) {
+function adminCreateEquipment(sessionToken, input) {
+  return executeAdminRpc_(sessionToken, function (actor) {
     return createEquipment_(input || {}, actor);
   });
 }
 
-function adminUpdateEquipment(idToken, input) {
-  return executeAdminRpc_(idToken, function (actor) {
+function adminUpdateEquipment(sessionToken, input) {
+  return executeAdminRpc_(sessionToken, function (actor) {
     return updateEquipment_(input || {}, actor);
   });
 }
 
-function adminChangeEquipmentStatus(idToken, input) {
-  return executeAdminRpc_(idToken, function (actor) {
+function adminChangeEquipmentStatus(sessionToken, input) {
+  return executeAdminRpc_(sessionToken, function (actor) {
     return changeEquipmentStatus_(input || {}, actor);
   });
 }
 
-function adminUploadEquipmentImage(idToken, input) {
-  return executeAdminRpc_(idToken, function (actor) {
+function adminUploadEquipmentImage(sessionToken, input) {
+  return executeAdminRpc_(sessionToken, function (actor) {
     return uploadEquipmentImage_(input || {}, actor);
   });
 }
 
-function adminListUsers(idToken, query) {
-  return executeAdminRpc_(idToken, function (actor) {
+function adminListUsers(sessionToken, query) {
+  return executeAdminRpc_(sessionToken, function (actor) {
     return listUsersForAdmin_(query || {}, actor);
   });
 }
 
-function adminCreateUser(idToken, input) {
-  return executeAdminRpc_(idToken, function (actor) {
+function adminCreateUser(sessionToken, input) {
+  return executeAdminRpc_(sessionToken, function (actor) {
     return createUser_(input || {}, actor);
   });
 }
 
-function adminUpdateUser(idToken, input) {
-  return executeAdminRpc_(idToken, function (actor) {
+function adminUpdateUser(sessionToken, input) {
+  return executeAdminRpc_(sessionToken, function (actor) {
     return updateUser_(input || {}, actor);
   });
 }
 
-function adminListCategories(idToken, query) {
-  return executeAdminRpc_(idToken, function (actor) {
+function adminListCategories(sessionToken, query) {
+  return executeAdminRpc_(sessionToken, function (actor) {
     return listCategoriesForAdmin_(query || {}, actor);
   });
 }
 
-function adminCreateCategory(idToken, input) {
-  return executeAdminRpc_(idToken, function (actor) {
+function adminCreateCategory(sessionToken, input) {
+  return executeAdminRpc_(sessionToken, function (actor) {
     return createCategory_(input || {}, actor);
   });
 }
 
-function adminUpdateCategory(idToken, input) {
-  return executeAdminRpc_(idToken, function (actor) {
+function adminUpdateCategory(sessionToken, input) {
+  return executeAdminRpc_(sessionToken, function (actor) {
     return updateCategory_(input || {}, actor);
   });
 }
 
-function adminListHistory(idToken, query) {
-  return executeAdminRpc_(idToken, function (actor) {
+function adminListHistory(sessionToken, query) {
+  return executeAdminRpc_(sessionToken, function (actor) {
     return listHistoryForAdmin_(query || {}, actor);
   });
 }
 
-function adminRunIntegrityAudit(idToken) {
-  return executeAdminRpc_(idToken, function (actor) {
+function adminRunIntegrityAudit(sessionToken) {
+  return executeAdminRpc_(sessionToken, function (actor) {
     return runIntegrityAudit_(actor);
   });
 }
 
-function adminListOperations(idToken, query) {
-  return executeAdminRpc_(idToken, function (actor) {
+function adminListOperations(sessionToken, query) {
+  return executeAdminRpc_(sessionToken, function (actor) {
     return listOperationsForAdmin_(query || {}, actor);
   });
 }
 
-function adminGetOperationDetail(idToken, operationId) {
-  return executeAdminRpc_(idToken, function (actor) {
+function adminGetOperationDetail(sessionToken, operationId) {
+  return executeAdminRpc_(sessionToken, function (actor) {
     return getOperationDetailForAdmin_(operationId, actor);
   });
 }
 
-function adminReconcileOperation(idToken, operationId) {
-  return executeAdminRpc_(idToken, function (actor) {
+function adminReconcileOperation(sessionToken, operationId) {
+  return executeAdminRpc_(sessionToken, function (actor) {
     return reconcileOperationForAdmin_(operationId, actor);
   });
 }
 
-function adminAbortOperation(idToken, input) {
-  return executeAdminRpc_(idToken, function (actor) {
+function adminAbortOperation(sessionToken, input) {
+  return executeAdminRpc_(sessionToken, function (actor) {
     return abortOperationForAdmin_(input || {}, actor);
   });
 }

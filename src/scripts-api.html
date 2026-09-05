@@ -15,16 +15,14 @@
   }
 
   const authState = {
-    idToken: '',
+    sessionToken: '',
     initialized: false,
-    initialization: null,
-    credentialPromise: null,
-    credentialResolve: null
+    attempt: null,
+    generation: 0,
+    sessionPromise: null,
+    sessionResolve: null,
+    sessionReject: null
   };
-
-  function oauthClientId() {
-    return String(document.body && document.body.dataset.googleOauthClientId || '').trim();
-  }
 
   function showGoogleSignIn(message) {
     const splash = document.querySelector('#app-splash');
@@ -40,110 +38,28 @@
     if (detail) detail.textContent = message ||
       'เลือกบัญชี Google ที่ได้รับอนุญาตให้ใช้ระบบ';
     if (requestId) requestId.textContent = '';
+    setSignInBusy(false);
   }
 
-  function waitForGoogleIdentity() {
-    if (global.google && google.accounts && google.accounts.id) {
-      return Promise.resolve(google.accounts.id);
+  function setSignInBusy(busy) {
+    const button = document.querySelector('#google-signin-button');
+    const label = button && button.querySelector('[data-auth-button-label]');
+    if (button) {
+      button.disabled = Boolean(busy);
+      button.setAttribute('aria-busy', busy ? 'true' : 'false');
     }
-    return new Promise(function (resolve, reject) {
-      const startedAt = Date.now();
-      const timer = global.setInterval(function () {
-        if (global.google && google.accounts && google.accounts.id) {
-          global.clearInterval(timer);
-          resolve(google.accounts.id);
-          return;
-        }
-        if (Date.now() - startedAt >= 15000) {
-          global.clearInterval(timer);
-          reject(new ClientApiError({
-            code: 'AUTH_CLIENT_UNAVAILABLE',
-            message: 'โหลดระบบลงชื่อเข้าใช้ Google ไม่สำเร็จ กรุณาตรวจอินเทอร์เน็ตแล้วลองใหม่',
-            retryable: true
-          }));
-        }
-      }, 100);
-    });
+    if (label) label.textContent = busy ? 'กำลังเชื่อมต่อกับ Google…' : 'ลงชื่อเข้าใช้ด้วย Google';
   }
 
-  function receiveGoogleCredential(response) {
-    const credential = response && typeof response.credential === 'string'
-      ? response.credential.trim()
-      : '';
-    if (!credential) return;
-    authState.idToken = credential;
-    if (authState.credentialResolve) authState.credentialResolve(credential);
-    authState.credentialPromise = null;
-    authState.credentialResolve = null;
+  function initializeServerOAuth() {
+    if (authState.initialized) return;
+    const button = document.querySelector('#google-signin-button');
+    if (!button) return;
+    button.addEventListener('click', startOAuthSignIn);
+    authState.initialized = true;
   }
 
-  function initializeGoogleIdentity() {
-    if (authState.initialized) return Promise.resolve();
-    if (authState.initialization) return authState.initialization;
-    authState.initialization = waitForGoogleIdentity().then(function (identityApi) {
-      const clientId = oauthClientId();
-      if (!clientId) {
-        throw new ClientApiError({
-          code: 'CONFIG_ERROR',
-          message: 'ระบบยังไม่ได้ตั้งค่า Google OAuth Client ID กรุณาติดต่อผู้ดูแลระบบ',
-          retryable: false
-        });
-      }
-      identityApi.initialize({
-        client_id: clientId,
-        callback: receiveGoogleCredential,
-        auto_select: false,
-        ux_mode: 'popup',
-        use_fedcm_for_button: false
-      });
-      const button = document.querySelector('#google-signin-button');
-      if (!button) {
-        throw new ClientApiError({
-          code: 'CLIENT_ENVIRONMENT',
-          message: 'ไม่พบส่วนลงชื่อเข้าใช้ กรุณาโหลดหน้าใหม่',
-          retryable: true
-        });
-      }
-      button.replaceChildren();
-      identityApi.renderButton(button, {
-        type: 'standard',
-        theme: 'outline',
-        size: 'large',
-        text: 'signin_with',
-        shape: 'rectangular',
-        logo_alignment: 'left',
-        locale: 'th'
-      });
-      authState.initialized = true;
-    }).catch(function (error) {
-      authState.initialization = null;
-      throw error;
-    });
-    return authState.initialization;
-  }
-
-  function getIdToken() {
-    if (authState.idToken) return Promise.resolve(authState.idToken);
-    showGoogleSignIn();
-    return initializeGoogleIdentity().then(function () {
-      if (authState.idToken) return authState.idToken;
-      if (!authState.credentialPromise) {
-        authState.credentialPromise = new Promise(function (resolve) {
-          authState.credentialResolve = resolve;
-        });
-      }
-      return authState.credentialPromise;
-    });
-  }
-
-  function clearIdToken(expectedToken) {
-    if (expectedToken && authState.idToken !== expectedToken) return false;
-    authState.idToken = '';
-    return true;
-  }
-
-  async function invoke(method, args) {
-    const idToken = await getIdToken();
+  function serverRpc(method, args) {
     return new Promise(function (resolve, reject) {
       if (!global.google || !google.script || !google.script.run) {
         reject(new ClientApiError({
@@ -159,23 +75,13 @@
             resolve(response.data);
             return;
           }
-          const errorCode = response && response.error && response.error.code;
-          const identityRejected = errorCode === 'UNAUTHENTICATED' ||
-            (method === 'getAppBootstrap' &&
-              (errorCode === 'FORBIDDEN' || errorCode === 'USER_DISABLED'));
-          if (identityRejected) {
-            const clearedCurrentToken = clearIdToken(idToken);
-            if (clearedCurrentToken && method !== 'getAppBootstrap') {
-              global.dispatchEvent(new CustomEvent('crs:authentication-required'));
-            }
-          }
           reject(new ClientApiError(
             response && response.error,
             response && response.meta && response.meta.requestId
           ));
         })
         .withFailureHandler(function (error) {
-          console.error('google.script.run transport failure', error);
+          console.error('google.script.run transport failure');
           reject(new ClientApiError({
             code: 'TRANSPORT_ERROR',
             message: 'เชื่อมต่อระบบไม่สำเร็จ กรุณาตรวจอินเทอร์เน็ตแล้วลองใหม่',
@@ -183,7 +89,7 @@
           }));
         });
       try {
-        runner[method].apply(runner, [idToken].concat(args || []));
+        runner[method].apply(runner, args || []);
       } catch (error) {
         reject(new ClientApiError({
           code: 'CLIENT_ERROR',
@@ -194,18 +100,274 @@
     });
   }
 
+  function randomBrowserSecret(prefix) {
+    if (!global.crypto || typeof global.crypto.getRandomValues !== 'function') {
+      throw new ClientApiError({
+        code: 'CLIENT_SECURITY_UNAVAILABLE',
+        message: 'เบราว์เซอร์นี้ไม่รองรับการลงชื่อเข้าใช้อย่างปลอดภัย กรุณาอัปเดตเบราว์เซอร์',
+        retryable: false
+      });
+    }
+    const bytes = new Uint8Array(32);
+    global.crypto.getRandomValues(bytes);
+    let binary = '';
+    bytes.forEach(function (byte) { binary += String.fromCharCode(byte); });
+    return prefix + global.btoa(binary)
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+  }
+
+  async function sha256BrowserSecret(value) {
+    if (!global.crypto || !global.crypto.subtle || typeof global.crypto.subtle.digest !== 'function' ||
+      typeof global.TextEncoder !== 'function') {
+      throw new ClientApiError({
+        code: 'CLIENT_SECURITY_UNAVAILABLE',
+        message: 'เบราว์เซอร์นี้ไม่รองรับการลงชื่อเข้าใช้อย่างปลอดภัย กรุณาอัปเดตเบราว์เซอร์',
+        retryable: false
+      });
+    }
+    const digest = await global.crypto.subtle.digest(
+      'SHA-256',
+      new global.TextEncoder().encode(String(value))
+    );
+    let binary = '';
+    new Uint8Array(digest).forEach(function (byte) { binary += String.fromCharCode(byte); });
+    return global.btoa(binary)
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+  }
+
+  function validateAuthorizationStart(value) {
+    const start = value && typeof value === 'object' ? value : {};
+    const flowId = String(start.flowId || '');
+    const authorizationUrl = String(start.authorizationUrl || '');
+    const expiresAt = Number(start.expiresAt);
+    let parsed;
+    try { parsed = new URL(authorizationUrl); }
+    catch (error) { parsed = null; }
+    const forbiddenParameters = parsed && [
+      'access_token', 'id_token', 'refresh_token', 'session_token'
+    ].some(function (name) { return parsed.searchParams.has(name); });
+    if (!/^flow1_[A-Za-z0-9_-]{43}$/.test(flowId) ||
+      !Number.isInteger(expiresAt) || expiresAt <= Math.floor(Date.now() / 1000) ||
+      !parsed || parsed.origin !== 'https://accounts.google.com' ||
+      parsed.pathname !== '/o/oauth2/v2/auth' || !parsed.searchParams.get('state') ||
+      forbiddenParameters) {
+      throw new ClientApiError({
+        code: 'AUTH_PROTOCOL_ERROR',
+        message: 'ระบบส่งข้อมูลเริ่มต้นการลงชื่อเข้าใช้ไม่ถูกต้อง กรุณาติดต่อผู้ดูแลระบบ',
+        retryable: false
+      });
+    }
+    return { flowId: flowId, authorizationUrl: authorizationUrl, expiresAt: expiresAt };
+  }
+
+  function sessionWaiter() {
+    if (authState.sessionToken) return Promise.resolve(authState.sessionToken);
+    if (!authState.sessionPromise) {
+      authState.sessionPromise = new Promise(function (resolve, reject) {
+        authState.sessionResolve = resolve;
+        authState.sessionReject = reject;
+      });
+    }
+    return authState.sessionPromise;
+  }
+
+  function settleSessionWaiter(error, sessionToken) {
+    const resolve = authState.sessionResolve;
+    const reject = authState.sessionReject;
+    authState.sessionPromise = null;
+    authState.sessionResolve = null;
+    authState.sessionReject = null;
+    if (error && reject) reject(error);
+    else if (!error && resolve) resolve(sessionToken);
+  }
+
+  function delay(milliseconds) {
+    return new Promise(function (resolve) { global.setTimeout(resolve, milliseconds); });
+  }
+
+  async function pollOAuthAttempt(attempt) {
+    let closedAt = 0;
+    while (authState.attempt === attempt && authState.generation === attempt.generation) {
+      if (Math.floor(Date.now() / 1000) >= attempt.expiresAt) {
+        throw new ClientApiError({
+          code: 'UNAUTHENTICATED',
+          message: 'คำขอลงชื่อเข้าใช้หมดอายุแล้ว กรุณาลองใหม่',
+          retryable: true
+        });
+      }
+      if (attempt.popup.closed) {
+        if (!closedAt) closedAt = Date.now();
+        if (Date.now() - closedAt > 1500) {
+          throw new ClientApiError({
+            code: 'AUTH_CANCELLED',
+            message: 'หน้าต่างลงชื่อเข้าใช้ถูกปิด กรุณาลองใหม่',
+            retryable: true
+          });
+        }
+      }
+      const result = await serverRpc('completeOAuthSignIn', [attempt.flowId, attempt.pollToken]);
+      if (result && result.status === 'COMPLETE') return;
+      if (!result || result.status !== 'PENDING') {
+        throw new ClientApiError({
+          code: 'AUTH_PROTOCOL_ERROR',
+          message: 'สถานะการลงชื่อเข้าใช้ไม่ถูกต้อง กรุณาลองใหม่',
+          retryable: true
+        });
+      }
+      await delay(750);
+    }
+    throw new ClientApiError({
+      code: 'AUTH_CANCELLED',
+      message: 'คำขอลงชื่อเข้าใช้ถูกยกเลิก',
+      retryable: true
+    });
+  }
+
+  async function startOAuthSignIn() {
+    if (authState.sessionToken || authState.attempt) return;
+    const popup = global.open('', 'crs-google-oauth',
+      'popup=yes,width=520,height=720,resizable=yes,scrollbars=yes');
+    if (!popup) {
+      const blocked = new ClientApiError({
+        code: 'POPUP_BLOCKED',
+        message: 'เบราว์เซอร์บล็อกหน้าต่างลงชื่อเข้าใช้ กรุณาอนุญาต popup แล้วลองใหม่',
+        retryable: true
+      });
+      showGoogleSignIn(blocked.message);
+      settleSessionWaiter(blocked);
+      return;
+    }
+
+    const generation = ++authState.generation;
+    const attempt = {
+      generation: generation,
+      popup: popup,
+      pollToken: '',
+      sessionToken: '',
+      flowId: '',
+      expiresAt: 0
+    };
+    authState.attempt = attempt;
+    setSignInBusy(true);
+
+    try {
+      try {
+        popup.document.title = 'กำลังเชื่อมต่อกับ Google';
+        popup.document.body.textContent = 'กำลังเตรียมหน้าลงชื่อเข้าใช้…';
+        popup.opener = null;
+      } catch (ignored) { /* The popup will navigate immediately. */ }
+
+      attempt.pollToken = randomBrowserSecret('poll1_');
+      attempt.sessionToken = randomBrowserSecret('session1_');
+      const hashes = await Promise.all([
+        sha256BrowserSecret(attempt.pollToken),
+        sha256BrowserSecret(attempt.sessionToken)
+      ]);
+      const start = validateAuthorizationStart(await serverRpc('beginOAuthSignIn', [{
+        pollTokenHash: hashes[0],
+        sessionTokenHash: hashes[1]
+      }]));
+      if (authState.attempt !== attempt || generation !== authState.generation) return;
+      attempt.flowId = start.flowId;
+      attempt.expiresAt = start.expiresAt;
+      popup.location.replace(start.authorizationUrl);
+      await pollOAuthAttempt(attempt);
+      if (authState.attempt !== attempt || generation !== authState.generation) return;
+      const hadSessionWaiter = Boolean(authState.sessionResolve);
+      authState.sessionToken = attempt.sessionToken;
+      settleSessionWaiter(null, authState.sessionToken);
+      if (!hadSessionWaiter) {
+        global.dispatchEvent(new CustomEvent('crs:authentication-required'));
+      }
+    } catch (error) {
+      const normalized = error instanceof ClientApiError ? error : new ClientApiError({
+        code: 'AUTH_CLIENT_ERROR',
+        message: 'ลงชื่อเข้าใช้ไม่สำเร็จ กรุณาลองใหม่',
+        retryable: true
+      });
+      if (authState.attempt === attempt && generation === authState.generation) {
+        showGoogleSignIn(normalized.message);
+        settleSessionWaiter(normalized);
+      }
+    } finally {
+      if (authState.attempt === attempt && generation === authState.generation) {
+        authState.attempt = null;
+        setSignInBusy(false);
+      }
+      try { if (!popup.closed) popup.close(); }
+      catch (ignored) { /* Cross-origin popup close is best-effort. */ }
+    }
+  }
+
+  function getSessionToken() {
+    if (authState.sessionToken) return Promise.resolve(authState.sessionToken);
+    initializeServerOAuth();
+    showGoogleSignIn();
+    return sessionWaiter();
+  }
+
+  function clearSessionToken(expectedToken) {
+    if (expectedToken && authState.sessionToken !== expectedToken) return false;
+    authState.sessionToken = '';
+    return true;
+  }
+
+  async function signOut() {
+    const token = authState.sessionToken;
+    const activeAttempt = authState.attempt;
+    clearSessionToken(token);
+    authState.generation += 1;
+    authState.attempt = null;
+    try {
+      if (activeAttempt && activeAttempt.popup && !activeAttempt.popup.closed) {
+        activeAttempt.popup.close();
+      }
+    } catch (ignored) { /* Popup cleanup is best-effort. */ }
+    if (token) {
+      try { await serverRpc('logoutSession', [token]); }
+      catch (error) { console.warn('Server session logout failed closed', error); }
+    }
+    global.dispatchEvent(new CustomEvent('crs:authentication-required'));
+  }
+
+  async function invoke(method, args) {
+    const sessionToken = await getSessionToken();
+    try {
+      return await serverRpc(method, [sessionToken].concat(args || []));
+    } catch (error) {
+      const identityRejected = error && (error.code === 'UNAUTHENTICATED' ||
+        error.code === 'USER_DISABLED' ||
+        (method === 'getAppBootstrap' &&
+          error.code === 'FORBIDDEN'));
+      if (identityRejected) {
+        const clearedCurrentToken = clearSessionToken(sessionToken);
+        if (clearedCurrentToken && method !== 'getAppBootstrap') {
+          global.dispatchEvent(new CustomEvent('crs:authentication-required'));
+        }
+      }
+      throw error;
+    }
+  }
+
   function endpoint(method) {
     return function () {
       return invoke(method, Array.prototype.slice.call(arguments));
     };
   }
 
+  document.addEventListener('DOMContentLoaded', initializeServerOAuth);
+
   global.CRS = global.CRS || {};
   global.CRS.ClientApiError = ClientApiError;
   global.CRS.auth = Object.freeze({
-    getIdToken: getIdToken,
-    clearIdToken: clearIdToken,
-    showGoogleSignIn: showGoogleSignIn
+    getSessionToken: getSessionToken,
+    clearSessionToken: clearSessionToken,
+    showGoogleSignIn: showGoogleSignIn,
+    signOut: signOut
   });
   global.CRS.api = Object.freeze({
     getAppBootstrap: endpoint('getAppBootstrap'),

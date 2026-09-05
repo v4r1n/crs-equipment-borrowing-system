@@ -66,7 +66,7 @@ test('all server, browser, and manifest sources compile', () => {
     access: 'ANYONE',
     executeAs: 'USER_DEPLOYING',
   });
-  assert.equal(serverFiles.length, 24);
+  assert.equal(serverFiles.length, 25);
   assert.equal(browserFiles.length, 9);
 });
 
@@ -75,7 +75,7 @@ test('deployment runbook covers every runtime file, config key, and requested st
   const runtimeFiles = fs.readdirSync(SRC)
     .filter((file) => /\.(?:gs|html|json)$/.test(file))
     .sort();
-  assert.equal(runtimeFiles.length, 44);
+  assert.equal(runtimeFiles.length, 45);
   for (const file of runtimeFiles) {
     const escapedFile = file.replaceAll('.', '\\.');
     assert.match(guide, new RegExp(`\\b${escapedFile}\\b`),
@@ -122,6 +122,8 @@ test('server exposes only the guarded RPCs and deliberate Apps Script entry poin
     'adminUpdateEquipment',
     'adminUpdateUser',
     'adminUploadEquipmentImage',
+    'beginOAuthSignIn',
+    'completeOAuthSignIn',
     'createBorrowRequest',
     'doGet',
     'getAppBootstrap',
@@ -132,6 +134,7 @@ test('server exposes only the guarded RPCs and deliberate Apps Script entry poin
     'listEquipment',
     'listMyBorrowing',
     'listMyHistory',
+    'logoutSession',
     'requestReturn',
   ];
   const actual = [];
@@ -151,32 +154,34 @@ test('server exposes only the guarded RPCs and deliberate Apps Script entry poin
     const name = declaration[1];
     if (name.endsWith('_')) return;
     const parameters = declaration[2].split(',').map((parameter) => parameter.trim()).filter(Boolean);
-    assert.equal(parameters[0], 'idToken', `${name} must receive its Google ID token first`);
+    assert.equal(parameters[0], 'sessionToken', `${name} must receive its application session first`);
     const end = declarations[index + 1] ? declarations[index + 1].index : api.length;
     const body = api.slice(declaration.index, end);
     const executor = name.startsWith('admin') ? 'executeAdminRpc_' : 'executeUserRpc_';
-    assert.match(body, new RegExp(`return ${executor}\\s*\\(\\s*idToken\\s*,`),
-      `${name} must use its token-verified role executor`);
+    assert.match(body, new RegExp(`return ${executor}\\s*\\(\\s*sessionToken\\s*,`),
+      `${name} must use its session-verified role executor`);
   });
   assert.match(api,
-    /function executeUserRpc_\s*\(idToken, handler\)[\s\S]*?executeSafely_\s*\([\s\S]*?requireUser_\s*\(idToken\)/);
+    /function executeUserRpc_\s*\(sessionToken, handler\)[\s\S]*?executeSafely_\s*\([\s\S]*?requireUser_\s*\(sessionToken\)/);
   assert.match(api,
-    /function executeAdminRpc_\s*\(idToken, handler\)[\s\S]*?executeSafely_\s*\([\s\S]*?requireAdmin_\s*\(idToken\)/);
+    /function executeAdminRpc_\s*\(sessionToken, handler\)[\s\S]*?executeSafely_\s*\([\s\S]*?requireAdmin_\s*\(sessionToken\)/);
   assert.match(read('src/Auth.gs'),
-    /function requireUser_\s*\(idToken\)[\s\S]*?verifyGoogleIdToken_\s*\(idToken\)/);
+    /function requireUser_\s*\(sessionToken\)[\s\S]*?requireApplicationSession_\s*\(sessionToken\)/);
   const allServerSource = sourceFiles('.gs').map((file) =>
     fs.readFileSync(path.join(SRC, file), 'utf8')).join('\n');
   assert.doesNotMatch(allServerSource, /Session\.getEffectiveUser\s*\(/);
   assert.doesNotMatch(
     ['src/Api.gs', 'src/Auth.gs', 'src/IdentityService.gs'].map(read).join('\n'),
     /Session\.getActiveUser\s*\(/,
-    'visitor identity must come only from a verified Google ID token',
+    'visitor identity must never come from the deployer Session user',
   );
   assert.match(read('src/Setup.gs'), /^function setupSystem_\s*\(/m,
     'editor-only setup must be private from google.script.run');
   assert.doesNotMatch(read('src/Setup.gs'), /^function setupSystem\s*\(/m);
   assert.match(read('src/Config.gs'), /GOOGLE_OAUTH_CLIENT_ID:\s*''/,
     'the OAuth client ID must be supplied through Script Properties');
+  assert.match(read('src/Config.gs'), /GOOGLE_OAUTH_CLIENT_SECRET:\s*''/,
+    'the OAuth client secret must be supplied through Script Properties');
 });
 
 test('include and route registries exactly match their source consumers', () => {
@@ -396,9 +401,10 @@ test('project-authored markup keeps the QR scanner passive and HTML safe', () =>
   assert.match(read('src/scripts-qr.html'), /\.scanFile\s*\(/);
 });
 
-test('Google Identity Services is configured without a source-controlled credential', () => {
+test('server-side OAuth/OIDC uses a protected callback and memory-only application session', () => {
   const index = read('src/index.html');
   const api = read('src/scripts-api.html');
+  const oauth = read('src/OAuthService.gs');
   const serverIdentity = read('src/IdentityService.gs');
   const authoredRuntime = [
     ...sourceFiles('.gs').map((file) => read(`src/${file}`)),
@@ -407,18 +413,42 @@ test('Google Identity Services is configured without a source-controlled credent
       .map((file) => read(`src/${file}`)),
   ].join('\n');
 
-  assert.match(index,
-    /<script\b[^>]*src=["']https:\/\/accounts\.google\.com\/gsi\/client["'][^>]*>/i);
-  assert.match(index, /data-google-oauth-client-id=["']<\?=\s*googleOAuthClientId\s*\?>["']/);
-  assert.match(read('src/Code.gs'),
-    /template\.googleOAuthClientId\s*=\s*getRuntimeConfig_\(\)\.GOOGLE_OAUTH_CLIENT_ID/);
-  assert.match(api, /identityApi\.initialize\s*\(/);
-  assert.match(api, /identityApi\.renderButton\s*\(/);
-  assert.match(api, /\[idToken\]\.concat\s*\(\s*args\s*\|\|\s*\[\]\s*\)/,
-    'the browser API adapter must prepend a token to every RPC');
+  assert.doesNotMatch(index, /accounts\.google\.com\/gsi\/client|data-google-oauth-client-id/i,
+    'HTML Service must not depend on the GIS JavaScript origin');
+  assert.doesNotMatch(read('src/Code.gs'), /googleOAuthClientId|GOOGLE_OAUTH_CLIENT_ID/,
+    'the OAuth client ID must not be rendered into the HTML-service iframe');
+  assert.doesNotMatch(api, /google\.accounts|identityApi|idToken/i);
+  assert.match(api, /serverRpc\s*\(\s*['"]beginOAuthSignIn['"]/);
+  assert.match(api, /serverRpc\s*\(\s*['"]completeOAuthSignIn['"]/);
+  assert.match(api, /\[sessionToken\]\.concat\s*\(\s*args\s*\|\|\s*\[\]\s*\)/,
+    'the browser API adapter must prepend an application session to every business RPC');
+  assert.doesNotMatch(api, /\b(?:localStorage|sessionStorage|document\.cookie)\b/,
+    'OAuth and application session secrets must stay in page memory');
   assert.doesNotMatch(authoredRuntime,
     /[0-9]{6,}-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com/,
     'a concrete Google OAuth client ID must never be committed to runtime source');
+  assert.doesNotMatch(authoredRuntime, /getUserProperties\s*\(|UserProperties/,
+    'execute-as-deployer authentication must not use shared UserProperties');
+
+  assert.match(oauth, /ScriptApp\.newStateToken\s*\(\)/);
+  assert.match(oauth, /\.withMethod\s*\(\s*OAUTH_STATE_CALLBACK_METHOD_\s*\)/);
+  assert.match(oauth, /\.withArgument\s*\(\s*['"]oauthNonce['"]/);
+  assert.match(oauth, /\.withArgument\s*\(\s*['"]oauthCodeVerifier['"]/);
+  assert.match(oauth, /\.withTimeout\s*\(/);
+  assert.match(oauth,
+    /https:\/\/script\.google\.com\/macros\/d\/[\s\S]*?\/usercallback/);
+  assert.match(oauth, /response_type:\s*['"]code['"]/);
+  assert.match(oauth, /code_challenge_method:\s*['"]S256['"]/);
+  assert.match(oauth, /scope:\s*['"]openid email['"]/);
+  assert.match(oauth, /https:\/\/oauth2\.googleapis\.com\/token/);
+  assert.match(oauth, /client_secret:\s*oauthConfig\.clientSecret/);
+  assert.match(oauth, /code_verifier:\s*codeVerifier/);
+  assert.match(oauth, /verifyGoogleIdToken_\s*\(\s*idToken\s*,\s*nonce\s*\)/);
+  assert.match(oauth, /CacheService\.getScriptCache\s*\(\)/);
+  assert.match(oauth, /Session\.getTemporaryActiveUserKey\s*\(\)/);
+  assert.match(oauth, /function requireApplicationSession_\s*\(sessionToken\)/);
+  assert.doesNotMatch(oauth, /(?:access_token|id_token|refresh_token|session_token)\s*:/,
+    'authorization URLs must not carry tokens');
 
   assert.match(serverIdentity,
     /https:\/\/www\.googleapis\.com\/oauth2\/v3\/certs/);
@@ -426,6 +456,7 @@ test('Google Identity Services is configured without a source-controlled credent
   assert.match(serverIdentity, /claims\.iss\s*===\s*'accounts\.google\.com'/);
   assert.match(serverIdentity, /claims\.aud/);
   assert.match(serverIdentity, /claims\.exp\s*>\s*nowSeconds/);
+  assert.match(serverIdentity, /claims\.nonce/);
   assert.match(serverIdentity, /claims\.email_verified\s*===\s*true/);
   assert.match(serverIdentity, /normalizeDomain_\(claims\.hd\)/);
   assert.doesNotMatch(serverIdentity, /tokeninfo/i,

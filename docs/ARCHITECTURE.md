@@ -8,12 +8,14 @@
 
 ```mermaid
 flowchart LR
-  U[User/Admin browser] -->|Sign in| GIS[Google Identity Services]
   U -->|HTTPS| H[Apps Script HTML Service SPA]
-  GIS -->|Google ID token| H
-  H -->|google.script.run + ID token| A[Guarded RPC API]
-  A -->|Verify signature/claims via JWKS| G[Auth + validation]
-  G --> S[Domain services and state machine]
+  H -->|Authorization request: state + nonce + PKCE| G[Google OAuth/OIDC]
+  G -->|One-time code + protected state| C[Apps Script /usercallback]
+  C -->|Server-side code exchange| G
+  C -->|Verify ID token + Users row; activate hashed session| K[ScriptCache auth records]
+  H -->|google.script.run + opaque session| A[Guarded RPC API]
+  A -->|Validate session; re-read Users row + role| V[Auth + authorization]
+  V --> S[Domain services and state machine]
   S --> R[Header-based repositories]
   R --> DB[(Google Sheets)]
   S --> F[Image service]
@@ -25,13 +27,17 @@ flowchart LR
 
 `index.html` เป็น shell เดียวและ include เฉพาะ partial ใน allowlist ตอน render เพื่อหลีกเลี่ยงข้อจำกัดหลายหน้าของ Apps Script หน้าเว็บแยก view templates ออกจาก controllers, จัด route ด้วย `google.script.history`/`google.script.url`, และใช้ view token ป้องกัน response เก่าเขียนทับหน้าใหม่
 
-ทุก server call ผ่าน Promise wrapper ของ `google.script.run`, แนบ Google ID token ที่ Google Identity Services คืนให้ และแปล envelope/error เป็น client error แบบเดียว Token อยู่ในหน่วยความจำของหน้า ไม่ใช่ identity assertion ที่ backend เชื่อโดยตรง ส่วน mutation สร้าง command ID ก่อนส่งและเก็บใน `sessionStorage` พร้อม fingerprint ของ payload เพื่อให้ retry หลังผลลัพธ์ไม่แน่ชัดใช้คำสั่งเดิมเท่านั้น ทุก action มี loading, success/error ภาษาไทย, field feedback และ confirmation ตามความเสี่ยง
+การลงชื่อเข้าใช้เปิด Google Authorization endpoint ใน popup ที่เกิดจาก user gesture โดยไม่โหลด GIS JavaScript ใน HTML-service iframe Browser สร้าง poll secret และ candidate application-session secret ด้วย Web Crypto, ส่งเฉพาะ hash ไปเริ่ม flow แล้วเก็บค่าจริงไว้ในหน่วยความจำ เมื่อ callback สำเร็จ browser poll ผลผ่าน `google.script.run`; authorization code อยู่เฉพาะ callback มาตรฐานและไม่มี ID/access/application-session token ใน URL
+
+ทุก business call ผ่าน Promise wrapper ของ `google.script.run`, แนบ opaque application session อายุสั้น และแปล envelope/error เป็น client error แบบเดียว Session ไม่ถูกเขียนลง cookie, `localStorage` หรือ `sessionStorage`; reload/expiry/cache eviction จึงต้องลงชื่อเข้าใช้อีกครั้ง ส่วน mutation สร้าง command ID ก่อนส่งและเก็บใน `sessionStorage` พร้อม fingerprint ของ payload เพื่อให้ retry หลังผลลัพธ์ไม่แน่ชัดใช้คำสั่งเดิมเท่านั้น ค่านี้เป็น idempotency metadata ไม่ใช่ auth session ทุก action มี loading, success/error ภาษาไทย, field feedback และ confirmation ตามความเสี่ยง
 
 QR controller สร้างสัญลักษณ์และสติกเกอร์ PNG ใน browser จาก canonical asset URL โดยใช้ vendored `qrcode-generator` และอ่าน QR จากไฟล์/ภาพที่ผู้ใช้เลือกด้วย vendored `html5-qrcode` เท่านั้น รูปไม่ออกจาก browser และ decoded payload ต้องผ่าน exact HTTPS application path, route, query และ Asset ID allowlist ก่อนเรียก SPA navigation. HTML Service จำกัด `getUserMedia()` จึงไม่เปิด live camera stream; mobile ใช้ native camera/file picker ผ่าน input `capture="environment"` และยังมี Asset ID manual fallback.
 
 ### API and authorization
 
-API เปิดเฉพาะ use-case ที่ชัดเจน เช่น `listEquipment`, `createBorrowRequest`, `adminApproveBorrow` และ `adminCompleteReturn` ไม่เปิด generic Sheet CRUD ทุก public wrapper รับ ID token เป็น argument แรกแล้วตรวจ RS256 signature ด้วย Google JWKS, `iss`, `aud`/`azp`, `iat`/`nbf`/`exp`, `sub`, `email_verified` และ authoritative-email rule ก่อนยอมรับอีเมล จากนั้นจึงหา Users row แบบ exact, ตรวจ `ACTIVE` และ role ฝั่ง server ไม่มี token/invalid token/unknown user/inactive/insufficient role ถูกปฏิเสธก่อน handler และทุก mutation re-read Users row ภายใน lock เพื่อปิด privilege escalation
+Auth bootstrap เปิดเฉพาะ `beginOAuthSignIn`, `completeOAuthSignIn` และ `logoutSession`; endpoint เหล่านี้ไม่คืน business data และใช้ secret/flow แบบเดาผ่านไม่ได้ ส่วน callback เป็น private Apps Script state-token method การเริ่ม flow ใช้ CSRF state ที่ Apps Script ลงนาม/เข้ารหัส, OIDC nonce, PKCE S256 และ one-time cache record Callback แลก code กับ Google ผ่าน server-side POST โดยใช้ Web OAuth Client secret จาก Script Properties แล้วตรวจ ID token ด้วย Google JWKS ครบทั้ง RS256, `iss`, `aud`/`azp`, `iat`/`nbf`/`exp`, nonce, `sub`, `email_verified` และ authoritative-email rule ก่อนตรวจ exact Users row, `ACTIVE` และ role
+
+API ธุรกิจเปิดเฉพาะ use-case ที่ชัดเจน เช่น `listEquipment`, `createBorrowRequest`, `adminApproveBorrow` และ `adminCompleteReturn` ไม่เปิด generic Sheet CRUD ทุก public wrapper รับ application session เป็น argument แรก Session record อยู่ใน `ScriptCache` ภายใต้ hash ของ secret, ผูกกับ verified `sub`/email/User ID/OAuth client และ temporary active-user key ของ Apps Script และหมดอายุไม่เกินทั้ง ID-token expiry กับ `AUTH_SESSION_TTL_SECONDS` ทุก call ตรวจ session/domain แล้ว re-read Users row ปัจจุบัน; ไม่มี/invalid/expired/evicted session, unknown/inactive user หรือสิทธิ์ไม่พอถูกปฏิเสธก่อน handler และทุก mutation re-read Users row ภายใน lock เพื่อปิด privilege escalation `CacheService` อาจ evict ก่อน TTL ได้ ซึ่งมีผลเพียงให้ session fail closed และต้องลงชื่อเข้าใช้ใหม่
 
 ### Domain services
 
@@ -84,9 +90,11 @@ Google Sheets ไม่มี rollback/cross-sheet transaction จริง ล�
 
 - Deployment เปิดเฉพาะ Google Account ที่ลงชื่อเข้าใช้ (`ANYONE`) แต่ application allowlist ใช้ `ALLOWED_DOMAINS`; `ALLOWED_DOMAIN` เป็น legacy fallback เฉพาะเมื่อยังไม่มี `ALLOWED_DOMAINS` และไม่รวม subdomain/alias โดยอัตโนมัติ
 - ผู้ใช้แอปทั่วไปไม่มี direct role ต่อ Sheet/Drive folder; เฉพาะผู้ deploy และผู้ดูแลที่อนุมัติเท่านั้นที่เข้าถึง datastore/project โดยตรง Manifest pin Drive, Sheets, deployer-email และ `script.external_request` สำหรับดึง Google JWKS
-- Google ID token เป็นหลักฐานที่ยังต้องตรวจครบทุก claim ไม่ใช่ authorization; server ไม่รับ email, role, audit actor, timestamp หรือ protected status จาก browser เป็นความจริง
+- Authorization code แลก token เฉพาะฝั่ง server; Google ID token ไม่ออกจาก callback backend และต้องตรวจ signature/claims/nonce ครบก่อนสร้าง session มันไม่ใช่ authorization โดยตัวเอง และ server ไม่รับ email, role, audit actor, timestamp หรือ protected status จาก browser เป็นความจริง
 - บัญชี `@gmail.com` ต้องมี `email_verified=true`; Google Workspace/non-Gmail ต้องมี `email_verified=true` และ `hd` ตรง exact email domain ที่ allowlist ระบบไม่ยอมรับ Google Account ที่ใช้อีเมล third-party และไม่มี authoritative `hd`
 - Users row เป็น explicit application allowlist: ไม่มีการ auto-provision, unknown/inactive ถูกปฏิเสธ และ Admin endpoint ตรวจ role จาก row ปัจจุบันทุกครั้ง
+- State/nonce/PKCE และ auth/session record ใช้ครั้งเดียวหรือมีอายุสั้น; raw application session อยู่ใน page memory เท่านั้น และ auth state/session ไม่ใช้ `UserProperties` เพราะ `USER_DEPLOYING` อาจทำให้ผู้ใช้ทั้งหมดเห็น context เจ้าของเดียวกัน
+- `Session.getTemporaryActiveUserKey()` ใช้เป็น secondary context binding เท่านั้น ไม่ใช่ visitor identity; verified Google token และ Users row ยังเป็น identity/authorization source ที่แท้จริง Callback กับหน้าหลักต้องเห็น temporary key เดียวกัน จึงต้อง pilot แยก browser profile กับ Workspace/Gmail ก่อนเปิด production
 - user อ่าน Borrow ของตนเองเท่านั้น; admin อ่านและ mutate ข้อมูลส่วนกลางตาม action ที่อนุญาต
 - ข้อมูล text ถูกจำกัดความยาว ป้องกัน formula injection ก่อนลง Sheet และ escape ก่อนเข้า HTML
 - QR มีไว้ระบุ Asset ID/route เท่านั้น ไม่ให้สิทธิ์และไม่ trigger mutation อัตโนมัติ
@@ -100,6 +108,6 @@ Google Sheets ไม่มี rollback/cross-sheet transaction จริง ล�
 
 ## Deployment topology
 
-โปรเจกต์ Apps Script แบบ standalone เชื่อม Google Sheet, Drive folder และ Web OAuth Client ID ด้วย Script Properties Production ใช้ versioned Web app แบบ `USER_DEPLOYING` + `ANYONE` ซึ่งหมายถึง Google Account ที่ลงชื่อเข้าใช้แล้ว ไม่ใช่ `ANYONE_ANONYMOUS`; backend จึงใช้สิทธิ์ผู้ deploy โดยผู้ใช้ทั่วไปไม่มี direct access ต่อ Sheet/folder แต่ identity มาจาก verified Google ID token
+โปรเจกต์ Apps Script แบบ standalone เชื่อม Google Sheet, Drive folder และ Web OAuth Client ID/secret ด้วย Script Properties Production ใช้ versioned Web app แบบ `USER_DEPLOYING` + `ANYONE` ซึ่งหมายถึง Google Account ที่ลงชื่อเข้าใช้แล้ว ไม่ใช่ `ANYONE_ANONYMOUS`; backend จึงใช้สิทธิ์ผู้ deploy โดยผู้ใช้ทั่วไปไม่มี direct access ต่อ Sheet/folder แต่ identity มาจาก ID token ที่ server แลกและตรวจเอง
 
-HTML Service รัน client ใน sandboxed iframe ขณะที่ Google OAuth Web Client บังคับ exact Authorized JavaScript origin โดยไม่รองรับ wildcard การเปิดใช้จึงต้อง pilot จาก production `/exec` จริง ตรวจ `window.location.origin` ใน frame ที่เรียก GIS และลงทะเบียน exact scheme/hostname/port นั้น หาก iframe origin เปลี่ยนระหว่างบัญชี/browser/device หรือไม่สามารถลงทะเบียนให้เสถียร ต้องหยุด rollout และย้าย sign-in surface ไปยัง origin ที่องค์กรควบคุมแทนการผ่อน validation การแก้ deployment เดิมให้ชี้ version ใหม่จะรักษา `/exec` URL และ QR sticker เดิม รายละเอียด deployment, rollback และ live acceptanceอยู่ใน [DEPLOYMENT.md](DEPLOYMENT.md)
+OAuth Client ต้องเป็นชนิด **Web application** และลงทะเบียน Authorized redirect URI แบบ exact เป็น `https://script.google.com/macros/d/{SCRIPT_ID}/usercallback`; flow นี้ไม่ใช้ Authorized JavaScript Origin และไม่โหลด GIS JavaScript จาก iframe การแก้ deployment เดิมให้ชี้ version ใหม่จะรักษา `/exec` URL และ QR sticker เดิม แต่ต้องทำ deployment ชั่วคราวเพื่อ pilot callback/temporary-user-key binding กับทั้ง Workspace และ Gmail ก่อนเปลี่ยน production รายละเอียดอยู่ใน [DEPLOYMENT.md](DEPLOYMENT.md)

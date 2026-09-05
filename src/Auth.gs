@@ -1,5 +1,9 @@
-function requireUser_(idToken) {
-  return requireUserForIdentity_(verifyGoogleIdToken_(idToken));
+function requireUser_(sessionToken) {
+  var session = requireApplicationSession_(sessionToken);
+  var user = requireUserForIdentity_({ email: session.email });
+  assertApp_(user.user_id === session.userId, 'FORBIDDEN',
+    'ข้อมูลบัญชีผู้ใช้งานเปลี่ยนแปลงแล้ว กรุณาลงชื่อเข้าใช้อีกครั้ง', null, false);
+  return user;
 }
 
 function requireUserForIdentity_(identity) {
@@ -19,8 +23,8 @@ function requireUserForIdentity_(identity) {
   return user;
 }
 
-function requireAdmin_(idToken) {
-  var user = requireUser_(idToken);
+function requireAdmin_(sessionToken) {
+  var user = requireUser_(sessionToken);
   assertApp_(user.role === USER_ROLE.ADMIN, 'FORBIDDEN',
     'เฉพาะผู้ดูแลระบบเท่านั้นที่ทำรายการนี้ได้', null, false);
   return user;

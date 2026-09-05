@@ -79,6 +79,11 @@ function validateSetupDeploymentConfig_(config) {
     'ALLOWED_DOMAINS มี domain ไม่ถูกต้อง: ' + invalidDomains.join(', '), null, false);
   assertApp_(isGoogleOAuthClientId_(config.GOOGLE_OAUTH_CLIENT_ID), 'CONFIG_ERROR',
     'กรุณาตั้งค่า GOOGLE_OAUTH_CLIENT_ID เป็น Web OAuth Client ID ที่ถูกต้อง', null, false);
+  assertApp_(isGoogleOAuthClientSecret_(config.GOOGLE_OAUTH_CLIENT_SECRET), 'CONFIG_ERROR',
+    'กรุณาตั้งค่า GOOGLE_OAUTH_CLIENT_SECRET จาก Web OAuth Client', null, false);
+  assertApp_(config.AUTO_PROVISION_USERS === false, 'CONFIG_ERROR',
+    'ระบบรุ่นนี้กำหนดให้ AUTO_PROVISION_USERS=false เท่านั้น', null, false);
+  getGoogleOAuthServerConfig_();
   normalizeImageSharingMode_(config.IMAGE_SHARING);
   if (config.DRIVE_FOLDER_ID) {
     try { DriveApp.getFolderById(config.DRIVE_FOLDER_ID); }

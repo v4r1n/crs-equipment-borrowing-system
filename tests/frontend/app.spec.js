@@ -32,21 +32,34 @@ function collectPageErrors(page) {
   return errors;
 }
 
+async function signInWithServerOAuth(page) {
+  await expect(page.locator('#access-state')).toBeVisible();
+  const button = page.locator('#google-signin-button');
+  await expect(button).toBeVisible();
+  await expect(button).toBeEnabled();
+  await button.click();
+}
+
+async function openAuthenticated(page, url, route) {
+  await page.goto(url);
+  await signInWithServerOAuth(page);
+  await waitForApplication(page, route);
+}
+
 test('bootstrap fails closed and keeps the admin route role-gated', async ({ page }) => {
   const pageErrors = collectPageErrors(page);
 
-  await page.goto('/?view=dashboard&role=admin');
-  await waitForApplication(page, 'dashboard');
+  await openAuthenticated(page, '/?view=dashboard&role=admin', 'dashboard');
   await expect(page.locator('#dashboard-content')).toBeVisible();
   await expect(page.locator('[data-session-name]').first()).toHaveText('ผู้ดูแลทดสอบ');
   await expect(page.locator('[data-route="admin"]').first()).toBeVisible();
 
-  await page.goto('/?view=admin&role=user');
-  await waitForApplication(page, 'dashboard');
+  await openAuthenticated(page, '/?view=admin&role=user', 'dashboard');
   await expect(page.locator('#page-admin')).toHaveCount(0);
   await expect(page.locator('[data-admin-only]:visible')).toHaveCount(0);
 
   await page.goto('/?view=dashboard&access=disabled');
+  await signInWithServerOAuth(page);
   await expect(page.locator('#app-splash')).toBeHidden();
   await expect(page.locator('#app-shell')).toBeHidden();
   await expect(page.locator('#access-state')).toBeVisible();
@@ -59,60 +72,145 @@ test('bootstrap fails closed and keeps the admin route role-gated', async ({ pag
   await page.locator('[data-action="retry-bootstrap"]').click();
   await page.waitForTimeout(150);
   expect(await bootstrapCallCount()).toBe(1);
-  await page.locator('[data-test-google-signin]').click();
+  await page.locator('#google-signin-button').click();
   await expect.poll(bootstrapCallCount).toBe(2);
 
   expect(pageErrors).toEqual([]);
 });
 
-test('Google Identity Services supplies a nonblank ID token to every browser RPC', async ({ page }) => {
+test('server-side OAuth uses a protected code-flow popup and an opaque application session', async ({ page }) => {
   const pageErrors = collectPageErrors(page);
-  const externalGisRequests = [];
+  const externalGoogleRequests = [];
   page.on('request', (request) => {
-    if (request.url().startsWith('https://accounts.google.com/gsi/')) {
-      externalGisRequests.push(request.url());
+    if (request.url().startsWith('https://accounts.google.com/')) {
+      externalGoogleRequests.push(request.url());
     }
   });
 
-  await page.goto('/?view=dashboard&role=admin');
-  await waitForApplication(page, 'dashboard');
+  await openAuthenticated(page, '/?view=dashboard&role=admin', 'dashboard');
   await page.locator('[data-route="equipment"]').first().click();
   await waitForApplication(page, 'equipment');
 
-  const identityState = await page.evaluate(() => window.__CRS_TEST__.googleIdentity);
-  expect(identityState.initialized).toBe(true);
-  expect(identityState.buttonRendered).toBe(true);
-  expect(identityState.credentialCount).toBeGreaterThanOrEqual(1);
-  expect(identityState.clientId).toMatch(/\.apps\.googleusercontent\.com$/);
+  const observed = await page.evaluate(() => ({
+    calls: window.__CRS_TEST__.calls,
+    oauth: window.__CRS_TEST__.oauth,
+    localStorage: Object.entries(window.localStorage),
+    sessionStorage: Object.entries(window.sessionStorage),
+    cookie: document.cookie,
+    location: window.location.href,
+    markup: document.documentElement.outerHTML,
+    hasGoogleAccountsApi: Boolean(window.google && window.google.accounts),
+  }));
 
-  const calls = await page.evaluate(() => window.__CRS_TEST__.calls);
-  expect(calls.length).toBeGreaterThanOrEqual(3);
-  expect(calls.every((call) => call.idToken === 'test-google-id-token')).toBe(true);
-  expect(externalGisRequests).toEqual([]);
+  expect(observed.oauth).toMatchObject({
+    popupOpenCount: 1,
+    beginCount: 1,
+    pollCount: 2,
+    completedCount: 1,
+  });
+  expect(observed.hasGoogleAccountsApi).toBe(false);
+  expect(externalGoogleRequests).toEqual([]);
+
+  const authorizationUrl = new URL(observed.oauth.popupUrls[0]);
+  expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
+    'https://accounts.google.com/o/oauth2/v2/auth',
+  );
+  expect(authorizationUrl.searchParams.get('response_type')).toBe('code');
+  expect(authorizationUrl.searchParams.get('redirect_uri')).toBe(
+    'https://script.google.com/macros/d/test-script-id/usercallback',
+  );
+  expect(authorizationUrl.searchParams.get('scope').split(' ').sort()).toEqual(['email', 'openid']);
+  expect(authorizationUrl.searchParams.get('state')).toBeTruthy();
+  expect(authorizationUrl.searchParams.get('nonce')).toBeTruthy();
+  expect(authorizationUrl.searchParams.get('code_challenge')).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  expect(authorizationUrl.searchParams.get('code_challenge_method')).toBe('S256');
+  ['access_token', 'id_token', 'refresh_token', 'session_token'].forEach((name) => {
+    expect(authorizationUrl.searchParams.has(name)).toBe(false);
+  });
+
+  const begin = observed.calls.find((call) => call.method === 'beginOAuthSignIn');
+  const polls = observed.calls.filter((call) => call.method === 'completeOAuthSignIn');
+  const businessCalls = observed.calls.filter((call) =>
+    !['beginOAuthSignIn', 'completeOAuthSignIn', 'logoutSession'].includes(call.method));
+  expect(begin.sessionToken).toBe('');
+  expect(begin.args[0]).toEqual({
+    pollTokenHash: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+    sessionTokenHash: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+  });
+  expect(polls).toHaveLength(2);
+  expect(polls.every((call) => call.sessionToken === '')).toBe(true);
+  expect(polls.every((call) => /^flow1_[A-Za-z0-9_-]{43}$/.test(call.args[0]))).toBe(true);
+  expect(polls.every((call) => /^poll1_[A-Za-z0-9_-]{43}$/.test(call.args[1]))).toBe(true);
+  expect(businessCalls.length).toBeGreaterThanOrEqual(3);
+  expect(businessCalls.every((call) => /^session1_[A-Za-z0-9_-]{43}$/.test(call.sessionToken))).toBe(true);
+  expect(new Set(businessCalls.map((call) => call.sessionToken)).size).toBe(1);
+  expect(observed.calls.every((call) => !Object.hasOwn(call, 'idToken'))).toBe(true);
+
+  const pollToken = polls[0].args[1];
+  const sessionToken = businessCalls[0].sessionToken;
+  expect(observed.oauth.popupUrls[0]).not.toContain(pollToken);
+  expect(observed.oauth.popupUrls[0]).not.toContain(sessionToken);
+  expect(observed.location).not.toContain(pollToken);
+  expect(observed.location).not.toContain(sessionToken);
+  expect(observed.markup).not.toContain(pollToken);
+  expect(observed.markup).not.toContain(sessionToken);
+  expect(observed.localStorage).toEqual([['crs.equipment.view', 'cards']]);
+  expect(JSON.stringify(observed.localStorage)).not.toContain(sessionToken);
+  expect(JSON.stringify(observed.localStorage)).not.toContain(pollToken);
+  expect(observed.sessionStorage).toEqual([]);
+  expect(observed.cookie).toBe('');
   expect(pageErrors).toEqual([]);
 });
 
-test('an expired RPC token requires a fresh credential and re-bootstrap before restoring the shell', async ({ page }) => {
+test('a blocked OAuth popup fails closed before creating a server authorization flow', async ({ page }) => {
   const pageErrors = collectPageErrors(page);
-  await page.goto('/?view=dashboard&role=admin&expire=getDashboard');
+  await page.goto('/?view=dashboard&role=admin&oauth=blocked');
+  await signInWithServerOAuth(page);
 
   await expect(page.locator('#access-state')).toBeVisible();
   await expect(page.locator('#app-shell')).toBeHidden();
-  await page.locator('[data-test-google-signin]').click();
+  await expect(page.locator('[data-access-message]')).toContainText('popup');
+  await expect(page.locator('#google-signin-button')).toBeEnabled();
+
+  const observed = await page.evaluate(() => ({
+    oauth: window.__CRS_TEST__.oauth,
+    calls: window.__CRS_TEST__.calls,
+  }));
+  expect(observed.oauth.popupOpenCount).toBe(1);
+  expect(observed.oauth.beginCount).toBe(0);
+  expect(observed.calls.some((call) => call.method === 'beginOAuthSignIn')).toBe(false);
+  expect(pageErrors).toEqual([]);
+});
+
+test('an expired application session requires a fresh OAuth flow before restoring the shell', async ({ page }) => {
+  const pageErrors = collectPageErrors(page);
+  await page.goto('/?view=dashboard&role=admin&expire=getDashboard');
+  await signInWithServerOAuth(page);
+
+  await expect(page.locator('#access-state')).toBeVisible();
+  await expect(page.locator('#app-shell')).toBeHidden();
+  await page.locator('#google-signin-button').click();
   await waitForApplication(page, 'dashboard');
 
-  const identityState = await page.evaluate(() => window.__CRS_TEST__.googleIdentity);
-  expect(identityState.credentialCount).toBe(2);
-  const calls = await page.evaluate(() => window.__CRS_TEST__.calls);
+  const observed = await page.evaluate(() => ({
+    oauth: window.__CRS_TEST__.oauth,
+    calls: window.__CRS_TEST__.calls,
+  }));
+  expect(observed.oauth.beginCount).toBe(2);
+  expect(observed.oauth.completedCount).toBe(2);
+  const calls = observed.calls;
   expect(calls.filter((call) => call.method === 'getAppBootstrap')).toHaveLength(2);
   expect(calls.filter((call) => call.method === 'getDashboard')).toHaveLength(2);
+  const sessionTokens = calls
+    .filter((call) => call.method === 'getDashboard')
+    .map((call) => call.sessionToken);
+  expect(new Set(sessionTokens).size).toBe(2);
   expect(pageErrors).toEqual([]);
 });
 
 test('equipment detail renders QR, downloads a sticker, copies its URL, and hands off exact Asset ID', async ({ page }) => {
   const pageErrors = collectPageErrors(page);
-  await page.goto(routeUrl('equipment-detail'));
-  await waitForApplication(page, 'equipment-detail');
+  await openAuthenticated(page, routeUrl('equipment-detail'), 'equipment-detail');
 
   await expect(page.locator('#equipment-detail-content')).toBeVisible();
   await expect(page.locator('#equipment-detail-title')).toHaveText('Notebook Dell Latitude 5440');
@@ -144,8 +242,7 @@ test('equipment detail renders QR, downloads a sticker, copies its URL, and hand
 test('scanner provides local file validation and a safe manual Asset ID fallback', async ({ page }) => {
   const pageErrors = collectPageErrors(page);
   await page.setViewportSize({ width: 320, height: 740 });
-  await page.goto(routeUrl('scan'));
-  await waitForApplication(page, 'scan');
+  await openAuthenticated(page, routeUrl('scan'), 'scan');
 
   const input = page.locator('#scan-image-input');
   await expect(page.locator('#scan-image-label')).toBeVisible();
@@ -170,8 +267,7 @@ test('scanner provides local file validation and a safe manual Asset ID fallback
 test('admin borrowing action requires its explicit modal and sends the current version', async ({ page }) => {
   const pageErrors = collectPageErrors(page);
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.goto(routeUrl('admin'));
-  await waitForApplication(page, 'admin');
+  await openAuthenticated(page, routeUrl('admin'), 'admin');
   await expect(page.locator('#table-body-admin-borrow')).toContainText('BR-000001');
 
   await page.locator('[data-borrow-action="approve"][data-borrow-id="BR-000001"]').click();
@@ -192,6 +288,7 @@ test('admin borrowing action requires its explicit modal and sends the current v
 });
 
 test('dashboard, catalog, detail, scanner, borrowing, and admin remain contained at 320/768/1440px', async ({ page }) => {
+  test.setTimeout(60_000);
   const pageErrors = collectPageErrors(page);
   const viewports = [
     { width: 320, height: 740 },
@@ -203,8 +300,7 @@ test('dashboard, catalog, detail, scanner, borrowing, and admin remain contained
   for (const viewport of viewports) {
     await page.setViewportSize(viewport);
     for (const route of routes) {
-      await page.goto(routeUrl(route));
-      await waitForApplication(page, route);
+      await openAuthenticated(page, routeUrl(route), route);
       const layout = await page.evaluate(() => ({
         viewport: document.documentElement.clientWidth,
         document: document.documentElement.scrollWidth,
@@ -238,8 +334,7 @@ test('dashboard, catalog, detail, scanner, borrowing, and admin remain contained
   }
 
   await page.setViewportSize({ width: 320, height: 740 });
-  await page.goto(routeUrl('admin'));
-  await waitForApplication(page, 'admin');
+  await openAuthenticated(page, routeUrl('admin'), 'admin');
   const tabDimensions = await page.locator('.admin-tabs-scroll').evaluate((element) => ({
     clientWidth: element.clientWidth,
     scrollWidth: element.scrollWidth,
@@ -253,8 +348,7 @@ test('dashboard, catalog, detail, scanner, borrowing, and admin remain contained
 
 test('RPC failures surface Thai feedback without leaving a loading state', async ({ page }) => {
   const pageErrors = collectPageErrors(page);
-  await page.goto('/?view=equipment&role=admin&fail=listEquipment');
-  await waitForApplication(page, 'equipment');
+  await openAuthenticated(page, '/?view=equipment&role=admin&fail=listEquipment', 'equipment');
   await expect(page.locator('#equipment-loading')).toBeHidden();
   await expect(page.locator('#equipment-error')).toBeVisible();
   await expect(page.locator('#equipment-error')).toContainText('จำลองข้อผิดพลาด');

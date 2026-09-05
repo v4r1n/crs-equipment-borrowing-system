@@ -12,18 +12,22 @@
   });
   var expireOnce = String(controls.get('expire') || '').trim();
   var expiredMethods = Object.create(null);
+  var flows = Object.create(null);
+  var activeSessionHashes = Object.create(null);
 
   var state = {
     calls: [],
     history: [],
     clipboard: '',
     sequence: 0,
-    googleIdentity: {
-      initialized: false,
-      buttonRendered: false,
-      credentialCount: 0
-    },
-    testIdToken: 'test-google-id-token'
+    oauth: {
+      popupOpenCount: 0,
+      popupUrls: [],
+      beginCount: 0,
+      pollCount: 0,
+      completedCount: 0,
+      logoutCount: 0
+    }
   };
   global.__CRS_TEST__ = state;
 
@@ -41,6 +45,29 @@
       fieldErrors: fieldErrors || null,
       retryable: retryable !== false
     };
+  }
+
+  function base64Url(bytes) {
+    var binary = '';
+    new Uint8Array(bytes).forEach(function (byte) {
+      binary += String.fromCharCode(byte);
+    });
+    return global.btoa(binary)
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+  }
+
+  async function sha256Base64Url(value) {
+    var encoded = new global.TextEncoder().encode(String(value || ''));
+    return base64Url(await global.crypto.subtle.digest('SHA-256', encoded));
+  }
+
+  function fixedOpaqueSuffix(label, sequence) {
+    return (String(label || '') + String(sequence || '') + 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-')
+      .replace(/[^A-Za-z0-9_-]/g, '')
+      .slice(0, 43)
+      .padEnd(43, 'A');
   }
 
   var categories = [
@@ -386,7 +413,7 @@
         ok: false,
         error: {
           code: 'UNAUTHENTICATED',
-          message: 'Google ID token หมดอายุ กรุณาลงชื่อเข้าใช้อีกครั้ง',
+          message: 'เซสชันหมดอายุ กรุณาลงชื่อเข้าใช้อีกครั้ง',
           fieldErrors: null,
           retryable: false
         },
@@ -421,6 +448,110 @@
     return { ok: true, data: data, meta: { requestId: requestId } };
   }
 
+  function authEnvelope(data) {
+    state.sequence += 1;
+    return {
+      ok: true,
+      data: data,
+      meta: { requestId: 'test-request-' + String(state.sequence).padStart(4, '0') }
+    };
+  }
+
+  function authErrorEnvelope(code, message) {
+    state.sequence += 1;
+    return {
+      ok: false,
+      error: {
+        code: code,
+        message: message,
+        fieldErrors: null,
+        retryable: false
+      },
+      meta: { requestId: 'test-request-' + String(state.sequence).padStart(4, '0') }
+    };
+  }
+
+  function beginOAuthResponse(rawArgs) {
+    var input = rawArgs && rawArgs[0];
+    if (!input || !/^[A-Za-z0-9_-]{43}$/.test(String(input.pollTokenHash || '')) ||
+      !/^[A-Za-z0-9_-]{43}$/.test(String(input.sessionTokenHash || ''))) {
+      return authErrorEnvelope('VALIDATION_ERROR', 'Invalid OAuth binding hashes');
+    }
+    state.oauth.beginCount += 1;
+    var flowId = 'flow1_' + fixedOpaqueSuffix('test-flow-', state.oauth.beginCount);
+    var stateToken = 'apps-script-state-' + fixedOpaqueSuffix('state-', state.oauth.beginCount);
+    var nonce = 'nonce1_' + fixedOpaqueSuffix('nonce-', state.oauth.beginCount);
+    var challenge = fixedOpaqueSuffix('challenge-', state.oauth.beginCount);
+    var redirectUri = 'https://script.google.com/macros/d/test-script-id/usercallback';
+    var authorization = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+    authorization.searchParams.set('client_id', '123456789012-crsequipmenttest.apps.googleusercontent.com');
+    authorization.searchParams.set('redirect_uri', redirectUri);
+    authorization.searchParams.set('response_type', 'code');
+    authorization.searchParams.set('scope', 'openid email');
+    authorization.searchParams.set('state', stateToken);
+    authorization.searchParams.set('nonce', nonce);
+    authorization.searchParams.set('code_challenge', challenge);
+    authorization.searchParams.set('code_challenge_method', 'S256');
+    authorization.searchParams.set('prompt', 'select_account');
+    flows[flowId] = {
+      pollTokenHash: String(input.pollTokenHash),
+      sessionTokenHash: String(input.sessionTokenHash),
+      polls: 0,
+      completed: false,
+      expiresAt: Math.floor(Date.now() / 1000) + 600
+    };
+    return authEnvelope({
+      flowId: flowId,
+      authorizationUrl: authorization.toString(),
+      expiresAt: flows[flowId].expiresAt
+    });
+  }
+
+  async function completeOAuthResponse(rawArgs) {
+    var flowId = String(rawArgs && rawArgs[0] || '');
+    var pollToken = String(rawArgs && rawArgs[1] || '');
+    var flow = flows[flowId];
+    state.oauth.pollCount += 1;
+    if (!flow || flow.completed || await sha256Base64Url(pollToken) !== flow.pollTokenHash) {
+      return authErrorEnvelope('UNAUTHENTICATED', 'Invalid or already consumed OAuth flow');
+    }
+    flow.polls += 1;
+    if (flow.polls === 1 || controls.get('oauth') === 'pending') {
+      return authEnvelope({ status: 'PENDING' });
+    }
+    if (controls.get('oauth') === 'denied') {
+      return authErrorEnvelope('FORBIDDEN', 'Google authorization was denied');
+    }
+    flow.completed = true;
+    activeSessionHashes[flow.sessionTokenHash] = {
+      flowId: flowId,
+      createdAt: Date.now()
+    };
+    state.oauth.completedCount += 1;
+    return authEnvelope({ status: 'COMPLETE' });
+  }
+
+  async function responseForInvocation(method, rawArgs) {
+    if (failures.indexOf(method) !== -1) return responseFor(method, rawArgs);
+    if (method === 'beginOAuthSignIn') return beginOAuthResponse(rawArgs);
+    if (method === 'completeOAuthSignIn') return completeOAuthResponse(rawArgs);
+
+    var sessionToken = String(rawArgs && rawArgs[0] || '');
+    var sessionHash = sessionToken ? await sha256Base64Url(sessionToken) : '';
+    if (method === 'logoutSession') {
+      if (sessionHash) delete activeSessionHashes[sessionHash];
+      state.oauth.logoutCount += 1;
+      return authEnvelope({ loggedOut: true });
+    }
+    if (!/^session1_[A-Za-z0-9_-]{43}$/.test(sessionToken) || !activeSessionHashes[sessionHash]) {
+      return authErrorEnvelope('UNAUTHENTICATED', 'Missing or invalid application session');
+    }
+    if (method === expireOnce && !expiredMethods[method]) {
+      delete activeSessionHashes[sessionHash];
+    }
+    return responseFor(method, rawArgs.slice(1));
+  }
+
   function makeRunner() {
     var successHandler = function () {};
     var failureHandler = function () {};
@@ -437,11 +568,16 @@
         return function () {
           var method = String(property);
           var rawArgs = Array.prototype.slice.call(arguments);
-          var idToken = typeof rawArgs[0] === 'string' ? rawArgs[0] : '';
-          var args = rawArgs.slice(1);
+          var isBusinessRpc = method !== 'beginOAuthSignIn' &&
+            method !== 'completeOAuthSignIn' && method !== 'logoutSession';
+          var sessionToken = isBusinessRpc || method === 'logoutSession'
+            ? String(rawArgs[0] || '')
+            : '';
+          var args = isBusinessRpc ? rawArgs.slice(1) :
+            (method === 'logoutSession' ? [] : rawArgs);
           state.calls.push({
             method: method,
-            idToken: idToken,
+            sessionToken: sessionToken,
             args: clone(args),
             at: Date.now()
           });
@@ -451,20 +587,9 @@
               failureHandler(new Error('Simulated google.script.run transport failure'));
               return;
             }
-            if (!idToken) {
-              successHandler({
-                ok: false,
-                error: {
-                  code: 'UNAUTHENTICATED',
-                  message: 'ไม่พบ Google ID token สำหรับคำขอนี้',
-                  fieldErrors: null,
-                  retryable: false
-                },
-                meta: { requestId: 'test-missing-token' }
-              });
-              return;
-            }
-            successHandler(responseFor(method, args));
+            Promise.resolve(responseForInvocation(method, rawArgs))
+              .then(successHandler)
+              .catch(failureHandler);
           }, delay);
         };
       }
@@ -483,7 +608,7 @@
     return { hash: global.location.hash.replace(/^#/, ''), parameter: parameter, parameters: parameters };
   }
 
-  var harnessControlKeys = ['role', 'access', 'fail', 'expire', 'transport', 'delay', 'qr', 'identity'];
+  var harnessControlKeys = ['role', 'access', 'fail', 'expire', 'transport', 'delay', 'qr', 'oauth'];
   function writeHistory(kind, historyState, parameters, title) {
     var rawParameters = clone(parameters || {});
     state.history.push({ kind: kind, state: clone(historyState || {}), parameters: rawParameters, title: title || '' });
@@ -521,44 +646,42 @@
   };
   Object.defineProperty(script, 'run', { configurable: false, enumerable: true, get: makeRunner });
 
-  var identityCallback = null;
-  function issueGoogleCredential() {
-    if (!identityCallback || controls.get('identity') === 'missing') return;
-    state.googleIdentity.credentialCount += 1;
-    identityCallback({
-      credential: state.testIdToken,
-      select_by: 'btn'
-    });
+  function createOAuthPopup() {
+    var popup = {
+      closed: false,
+      currentUrl: '',
+      document: {
+        title: '',
+        body: { textContent: '' }
+      },
+      location: {
+        replace: function (url) {
+          popup.currentUrl = String(url || '');
+          state.oauth.popupUrls.push(popup.currentUrl);
+          if (controls.get('oauth') === 'cancelled') {
+            global.setTimeout(function () { popup.closed = true; }, 50);
+          }
+        }
+      },
+      close: function () {
+        popup.closed = true;
+      }
+    };
+    return popup;
   }
 
-  var identity = {
-    initialize: function (configuration) {
-      identityCallback = configuration && configuration.callback;
-      state.googleIdentity.initialized = true;
-      state.googleIdentity.clientId = String(configuration && configuration.client_id || '');
-    },
-    renderButton: function (container) {
-      state.googleIdentity.buttonRendered = true;
-      var button = document.createElement('button');
-      button.type = 'button';
-      button.textContent = 'Sign in with Google';
-      button.setAttribute('data-test-google-signin', '');
-      button.addEventListener('click', issueGoogleCredential);
-      container.appendChild(button);
-      if (controls.get('identity') !== 'manual' && controls.get('identity') !== 'missing') {
-        global.setTimeout(issueGoogleCredential, 0);
-      }
-    },
-    prompt: function () {
-      global.setTimeout(issueGoogleCredential, 0);
-    },
-    disableAutoSelect: function () {}
+  global.open = function (url, name, features) {
+    state.oauth.popupOpenCount += 1;
+    state.oauth.lastPopupName = String(name || '');
+    state.oauth.lastPopupFeatures = String(features || '');
+    if (controls.get('oauth') === 'blocked') return null;
+    var popup = createOAuthPopup();
+    state.oauth.lastPopup = popup;
+    if (url) popup.location.replace(url);
+    return popup;
   };
 
-  global.google = {
-    script: script,
-    accounts: { id: identity }
-  };
+  global.google = { script: script };
 
   state.simulateHistoryChange = function (route, parameters) {
     if (historyChangeHandler) {

@@ -30,17 +30,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dashboard views for users and admins, including current metrics, latest loans, due-soon/overdue lists, and most-borrowed equipment.
 - Searchable, filterable, sortable, paginated equipment catalog with card/table modes, detail view, included items, and admin equipment editor, status, and Drive-image workflows.
 - Borrow request, My Borrow, personal history, return-request, account, and complete admin-center screens for borrowing, assets, users, categories, history, integrity audit, and durable operation recovery.
-- Promise-based client API for all 32 guarded RPCs, SPA history/deep links, optimistic row versions, field-level Thai errors, and session-backed stable command IDs for uncertain retries.
+- Promise-based client API for all 32 guarded business RPCs, SPA history/deep links, optimistic row versions, field-level Thai errors, and session-backed stable command IDs for uncertain retries.
 - Vendored, checksummed `qrcode-generator` 2.0.4 and `html5-qrcode` 2.3.8 distributions with license and third-party notices.
 - Equipment QR display, canonical-link copy, and high-resolution PNG sticker download with level-Q correction and a four-module quiet zone.
 - Mobile-first QR image capture/file scanning, strict canonical payload validation, manual Asset ID fallback, route cleanup, and exact-asset Admin borrowing handoff.
 - Deterministic Node test harnesses for Apps Script services and source/security contracts, plus an offline Playwright HTML-service harness with responsive acceptance at 320, 768, and 1440 pixels.
 - Automated coverage for the complete borrow/return lifecycle, double booking, permissions, overdue projection, duplicate IDs and business keys, setup/migration integrity, QR browser actions, Thai error states, and Admin scan handoff.
 - Phase 7 step-by-step Google Workspace deployment guide covering the complete runtime inventory, Script Properties, first-admin bootstrap, authorization, Web app publication, User/Admin acceptance, stable-URL upgrades, rollback, backups, monitoring, quotas, and troubleshooting.
-- Production sign-off guidance for Google Identity Services, Workspace/Gmail ID-token verification, iframe-origin compatibility, Drive image sharing, physical QR scanning, native mobile capture, deployed HTML-service behavior, and organization-owned evidence.
-- Google Identity Services client integration plus backend Google ID-token verification against rotating JWKS, including signature, issuer, audience, authorized-party, time, subject, verified-email, Gmail, and Workspace hosted-domain checks.
-- Multi-domain configuration through `ALLOWED_DOMAINS` with backward-compatible `ALLOWED_DOMAIN` fallback and deployment-only `GOOGLE_OAUTH_CLIENT_ID` Script Property.
-- Automated authentication coverage for Workspace and Gmail users, invalid domains, invalid/expired tokens, inactive accounts, absent token, and role escalation attempts.
+- Production sign-off guidance for the server-side OAuth callback, Workspace/Gmail OIDC verification, temporary-user-key binding, Drive image sharing, physical QR scanning, native mobile capture, deployed HTML-service behavior, and organization-owned evidence.
+- Server-side OAuth 2.0/OpenID Connect Authorization Code flow using Apps Script `StateTokenBuilder`, exact `/usercallback` redirect, CSRF state, nonce, PKCE S256, one-time callback claims, and server-side code exchange.
+- Backend Google ID-token verification against rotating JWKS, including signature, issuer, audience, authorized-party, time, nonce, subject, verified-email, Gmail, and Workspace hosted-domain checks; the ID token never enters browser application state.
+- Memory-only opaque application sessions backed by hashed, expiring `ScriptCache` records and bound to verified identity, Users row, OAuth client, and temporary active-user key.
+- Multi-domain configuration through `ALLOWED_DOMAINS` with backward-compatible `ALLOWED_DOMAIN` fallback and deployment-only `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `AUTH_FLOW_TTL_SECONDS`, and `AUTH_SESSION_TTL_SECONDS` Script Properties.
+- Automated authentication coverage for Workspace and Gmail users, callback state/nonce/PKCE and replay handling, invalid domains, invalid/expired tokens and sessions, inactive accounts, isolation, logout, and role escalation attempts.
 - Automated deployment-runbook contract that keeps all runtime filenames, configuration keys, and eleven required rollout steps synchronized with source.
 - Setup preflight coverage for invalid image-sharing policy, inaccessible Drive folders, `/dev` URLs, and mismatched Web app deployments.
 
@@ -61,17 +63,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Security
 
-- Re-authorize every mutation from the current Users row inside the Script Lock; missing/invalid/expired tokens, disallowed domains, unknown/inactive users, and insufficient roles fail closed.
+- Re-authorize every mutation from the current Users row inside the Script Lock; missing/invalid/expired sessions, disallowed domains, unknown/inactive users, and insufficient roles fail closed.
 - Restrict first setup to configured allowlisted-domain admins and subsequent setup runs to currently active admins, with authorization checked inside the setup lock.
 - Redact procurement, Drive file, active-workflow, and staff audit fields from non-admin equipment/borrowing responses.
 - Escape dynamic client markup, allowlist routes/includes and Drive thumbnail URLs, gate admin routes in the client, and re-authorize every admin operation on the server.
 - Prevent an active admin from changing the email of their own signed-in Users row, avoiding identity orphaning; another admin may perform the controlled change.
 - Keep scan images local, reject external/malformed/ambiguous QR payloads, and avoid permission-sensitive live-camera APIs inside the Apps Script HTML-service sandbox.
 - Remove the internal error constructor from the callable Apps Script surface by renaming it `AppError_`; automated contracts now fail if an unreviewed public server function appears.
-- Freeze the production topology to an organization-controlled deployer, logged-in-account access (`ANYONE`, never `ANYONE_ANONYMOUS`), verified Google ID tokens, private datastore ACLs, and a stable versioned `/exec` deployment.
-- Pin the manifest to Drive, Sheets, deployer email, and `script.external_request` for Google JWKS; document the exact HTML-service iframe-origin pilot, external-account image-link boundary, non-retroactive sharing, restricted project editors, and project-wide property rollback risk.
+- Freeze the production topology to an organization-controlled deployer, logged-in-account access (`ANYONE`, never `ANYONE_ANONYMOUS`), server-verified Google identity, private datastore ACLs, and a stable versioned `/exec` deployment.
+- Pin the manifest to Drive, Sheets, deployer email, and `script.external_request` for Google token exchange/JWKS; document the exact `/usercallback` URI, temporary-user-key pilot, external-account image-link boundary, non-retroactive sharing, restricted project editors, and project-wide property rollback risk.
 - Require exactly one active Users row and current server-side role for every request; verified Google identity never auto-provisions or grants application privilege.
 - Cache Google's JWKS in its validated document shape while honoring `Cache-Control: max-age`/`Age`, including immediate no-cache responses; treat cache failures as non-fatal and reject unknown key IDs against a fresh key set without attacker-triggered refresh loops.
-- Compare-and-clear only the ID token that a rejected RPC actually used, then require a fresh credential and full bootstrap before restoring the application shell after expiry.
+- Keep raw polling/session secrets only in page memory, revoke the current server session on sign-out, and require a fresh authorization flow plus full bootstrap after rejection or expiry.
+- Prohibit deployer-shared `UserProperties` as an auth/session store and prohibit ID, access, refresh, or application-session tokens in URLs.
 
 [Unreleased]: https://github.com/v4r1n/crs-equipment-borrowing-system/compare/main...codex/initial-v1

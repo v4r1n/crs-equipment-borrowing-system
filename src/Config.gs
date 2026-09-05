@@ -12,6 +12,9 @@ var CONFIG = Object.freeze({
   ALLOWED_DOMAINS: [],
   ALLOWED_DOMAIN: '',
   GOOGLE_OAUTH_CLIENT_ID: '',
+  GOOGLE_OAUTH_CLIENT_SECRET: '',
+  AUTH_FLOW_TTL_SECONDS: 600,
+  AUTH_SESSION_TTL_SECONDS: 3600,
   TIMEZONE: 'Asia/Bangkok',
   LOCALE: 'th_TH',
   AUTO_PROVISION_USERS: false,
@@ -45,6 +48,22 @@ function getRuntimeConfig_() {
     GOOGLE_OAUTH_CLIENT_ID: valueOrDefault_(
       properties.GOOGLE_OAUTH_CLIENT_ID,
       CONFIG.GOOGLE_OAUTH_CLIENT_ID
+    ),
+    GOOGLE_OAUTH_CLIENT_SECRET: valueOrDefault_(
+      properties.GOOGLE_OAUTH_CLIENT_SECRET,
+      CONFIG.GOOGLE_OAUTH_CLIENT_SECRET
+    ),
+    AUTH_FLOW_TTL_SECONDS: parseIntegerProperty_(
+      properties.AUTH_FLOW_TTL_SECONDS,
+      CONFIG.AUTH_FLOW_TTL_SECONDS,
+      120,
+      1800
+    ),
+    AUTH_SESSION_TTL_SECONDS: parseIntegerProperty_(
+      properties.AUTH_SESSION_TTL_SECONDS,
+      CONFIG.AUTH_SESSION_TTL_SECONDS,
+      300,
+      21600
     ),
     TIMEZONE: valueOrDefault_(properties.TIMEZONE, CONFIG.TIMEZONE),
     LOCALE: valueOrDefault_(properties.LOCALE, CONFIG.LOCALE),

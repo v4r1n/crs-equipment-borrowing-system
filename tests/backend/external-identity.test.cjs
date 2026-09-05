@@ -1,275 +1,187 @@
 'use strict';
-
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const {
-  TEST_GOOGLE_OAUTH_CLIENT_ID,
-  createAppsScriptHarness
-} = require('./apps-script-harness.cjs');
-const {
-  bootstrappedHarness,
-  createUser,
-  expectError,
-  expectOk
-} = require('./test-helpers.cjs');
-
-const MULTI_DOMAIN_PROPERTIES = Object.freeze({
-  ADMIN_EMAILS: 'admin@yru.ac.th',
-  ALLOWED_DOMAINS: 'yru.ac.th,gmail.com',
-  ALLOWED_DOMAIN: 'legacy.invalid',
-  GOOGLE_OAUTH_CLIENT_ID: TEST_GOOGLE_OAUTH_CLIENT_ID,
-  AUTO_PROVISION_USERS: 'false'
-});
-
-function multiDomainHarness(overrides = {}) {
-  return bootstrappedHarness({
-    activeEmail: 'admin@yru.ac.th',
-    ...overrides,
-    properties: {
-      ...MULTI_DOMAIN_PROPERTIES,
-      ...(overrides.properties || {})
-    }
-  });
+const { createAppsScriptHarness, GOOGLE_JWKS_URL, GOOGLE_OAUTH_TOKEN_URL, PUBLIC_RPC_NAMES, sha256Base64Url } = require('./apps-script-harness.cjs');
+const { bootstrappedHarness, createUser, expectOk, expectError } = require('./test-helpers.cjs');
+function harness(options = {}) {
+  return bootstrappedHarness({ activeEmail: 'admin@yru.ac.th', ...options,
+    properties: { ADMIN_EMAILS: 'admin@yru.ac.th', ALLOWED_DOMAINS: 'yru.ac.th,gmail.com',
+      ALLOWED_DOMAIN: 'yru.ac.th', ...(options.properties || {}) } });
 }
-
-function corruptSignature(idToken) {
-  const segments = String(idToken).split('.');
-  segments[2] = `${segments[2][0] === 'A' ? 'B' : 'A'}${segments[2].slice(1)}`;
-  return segments.join('.');
+function login(h, email, options = {}) {
+  const start = h.startOAuth();
+  expectOk(start.response);
+  return { start, ...h.finishOAuth(start, { email, ...options }) };
 }
-
-test('ALLOWED_DOMAINS normalizes multiple domains and falls back to legacy ALLOWED_DOMAIN', () => {
-  const modern = createAppsScriptHarness({
-    properties: {
-      ALLOWED_DOMAINS: ' YRU.AC.TH, gmail.com, yru.ac.th ',
-      ALLOWED_DOMAIN: 'legacy.invalid'
-    }
-  });
-  assert.deepEqual(
-    Array.from(modern.invokeRaw('getRuntimeConfig_').ALLOWED_DOMAINS),
-    ['yru.ac.th', 'gmail.com']
-  );
-
-  modern.properties.deleteProperty('ALLOWED_DOMAINS');
-  assert.deepEqual(
-    Array.from(modern.invokeRaw('getRuntimeConfig_').ALLOWED_DOMAINS),
-    ['legacy.invalid']
-  );
-
-  modern.properties.setProperty('ALLOWED_DOMAINS', '');
-  modern.properties.setProperty('ALLOWED_DOMAIN', 'yru.ac.th');
-  assert.deepEqual(
-    Array.from(modern.invokeRaw('getRuntimeConfig_').ALLOWED_DOMAINS),
-    ['yru.ac.th']
-  );
-
-  const unsafe = createAppsScriptHarness({
-    properties: { ALLOWED_DOMAINS: 'yru.ac.th,*.example.com' }
-  });
-  expectError(unsafe.invoke('getAppBootstrap'), 'CONFIG_ERROR');
+test('domain list takes precedence and legacy fallback remains single-domain', () => {
+  const h = createAppsScriptHarness({ properties: { ALLOWED_DOMAINS: ' YRU.AC.TH,gmail.com,yru.ac.th ', ALLOWED_DOMAIN: 'legacy.example' } });
+  assert.deepEqual(Array.from(h.invokeRaw('getRuntimeConfig_').ALLOWED_DOMAINS), ['yru.ac.th', 'gmail.com']);
+  h.properties.deleteProperty('ALLOWED_DOMAINS');
+  assert.deepEqual(Array.from(h.invokeRaw('getRuntimeConfig_').ALLOWED_DOMAINS), ['legacy.example']);
+  h.properties.setProperty('ALLOWED_DOMAINS', '*.example.com');
+  expectError(h.startOAuth().response, 'CONFIG_ERROR');
 });
-
-test('verified yru.ac.th and gmail.com identities use their own active Users rows', () => {
-  const harness = multiDomainHarness();
-  const yruUser = createUser(harness, {
-    suffix: 'yru-identity',
-    email: 'lecturer@yru.ac.th'
-  });
-  const gmailUser = createUser(harness, {
-    suffix: 'gmail-identity',
-    email: 'external.borrower@gmail.com'
-  });
-
-  harness.setTokenIdentity(yruUser.email, { hd: 'yru.ac.th' });
-  const yruBootstrap = expectOk(harness.invoke('getAppBootstrap'));
-  assert.equal(yruBootstrap.session.email, 'lecturer@yru.ac.th');
-  assert.equal(yruBootstrap.session.role, 'USER');
-
-  harness.setTokenIdentity(gmailUser.email, { hd: undefined });
-  const gmailBootstrap = expectOk(harness.invoke('getAppBootstrap'));
-  assert.equal(gmailBootstrap.session.email, 'external.borrower@gmail.com');
-  assert.equal(gmailBootstrap.session.role, 'USER');
-  assert.ok(harness.state.fetches.length >= 1, 'identity verification must obtain Google JWKS');
-});
-
-test('Google JWKS is reused from Script Cache across verified RPCs', () => {
-  const harness = multiDomainHarness();
-  harness.setTokenIdentity('admin@yru.ac.th', { hd: 'yru.ac.th' });
-
-  expectOk(harness.invoke('getAppBootstrap'));
-  const fetchesAfterFirstRpc = harness.state.fetches.length;
-  assert.equal(fetchesAfterFirstRpc, 1);
-
-  expectOk(harness.invoke('listEquipment', {}));
-  assert.equal(harness.state.fetches.length, fetchesAfterFirstRpc,
-    'a cached JWKS must prevent a second Google fetch');
-});
-
-test('Google JWKS max-age=0 is respected and does not retain signing keys', () => {
-  const harness = multiDomainHarness({
-    jwksHeaders: { 'Cache-Control': 'public, max-age=0' }
-  });
-  harness.setTokenIdentity('admin@yru.ac.th', { hd: 'yru.ac.th' });
-
-  expectOk(harness.invoke('getAppBootstrap'));
-  expectOk(harness.invoke('listEquipment', {}));
-  assert.equal(harness.state.fetches.length, 2);
-});
-
-test('unknown key IDs cannot force repeated JWKS refreshes while cached keys are fresh', () => {
-  const harness = multiDomainHarness();
-  for (let index = 0; index < 4; index += 1) {
-    const token = harness.issueIdToken('admin@yru.ac.th', { hd: 'yru.ac.th' }, {
-      header: { kid: `attacker-key-${index}` }
-    });
-    expectError(harness.invokeWithToken('getDashboard', token), 'UNAUTHENTICATED');
+test('YRU and Gmail authenticate through code exchange to their own Users row', () => {
+  const h = harness();
+  for (const email of ['lecturer@yru.ac.th', 'borrower@gmail.com']) {
+    createUser(h, { suffix: email.split('@')[0], email });
   }
-  assert.equal(harness.state.fetches.length, 1,
-    'a fresh cached key set must reject unknown kids without another fetch');
+  const sessions = [];
+  for (const email of ['lecturer@yru.ac.th', 'borrower@gmail.com']) {
+    const result = h.signInAs(email);
+    expectOk(result.finish.pollResponse);
+    sessions.push(h.state.sessionToken);
+    assert.equal(expectOk(h.invoke('getAppBootstrap')).session.email, email);
+    assert.equal(expectOk(h.invoke('getAppBootstrap')).session.role, 'USER');
+  }
+  assert.notEqual(sessions[0], sessions[1]);
+  expectError(h.invokeWithToken('getAppBootstrap', sessions[0]), 'UNAUTHENTICATED');
 });
-
-test('JWKS cache failures do not reject a token after a successful Google fetch', () => {
-  const harness = multiDomainHarness();
-  harness.cache.put = () => { throw new Error('simulated CacheService failure'); };
-  harness.setTokenIdentity('admin@yru.ac.th', { hd: 'yru.ac.th' });
-
-  expectOk(harness.invoke('getAppBootstrap'));
-  assert.equal(harness.state.fetches.length, 1);
-  assert.equal(harness.invokeRaw('googleIdentityJwksCacheSeconds_', {
-    getHeaders: () => ({ 'Cache-Control': 'public, max-age=60', Age: '55' })
-  }), 5);
-
-  const acquisitionFailure = multiDomainHarness();
-  acquisitionFailure.context.CacheService.getScriptCache = () => {
-    throw new Error('simulated CacheService acquisition failure');
-  };
-  acquisitionFailure.setTokenIdentity('admin@yru.ac.th', { hd: 'yru.ac.th' });
-  expectOk(acquisitionFailure.invoke('getAppBootstrap'));
-  assert.equal(acquisitionFailure.state.fetches.length, 1);
+test('authorization URL and token POST use exact redirect, state, nonce and PKCE without leaking credentials', () => {
+  const h = harness();
+  const start = h.startOAuth();
+  const p = start.authorizationUrl.searchParams;
+  assert.equal(p.get('response_type'), 'code');
+  assert.equal(p.get('scope'), 'openid email');
+  assert.equal(p.get('code_challenge_method'), 'S256');
+  assert.equal(p.get('code_challenge'), sha256Base64Url(start.stateRecord.arguments.oauthCodeVerifier));
+  assert.equal(start.stateRecord.method, 'googleOAuthCallback_');
+  assert.match(p.get('redirect_uri'), /^https:\/\/script\.google\.com\/macros\/d\/[^/]+\/usercallback$/);
+  for (const name of ['access_token', 'id_token', 'client_secret', 'session_token']) assert.equal(p.has(name), false);
+  expectError(h.invokeWithToken('getDashboard', start.sessionToken), 'UNAUTHENTICATED');
+  const result = h.finishOAuth(start);
+  expectOk(result.pollResponse);
+  const fetch = h.state.fetches.filter(x => x.url === GOOGLE_OAUTH_TOKEN_URL).at(-1);
+  const body = new URLSearchParams(fetch.options.payload);
+  assert.equal(fetch.options.method, 'post');
+  assert.equal(fetch.options.followRedirects, false);
+  assert.equal(body.get('redirect_uri'), p.get('redirect_uri'));
+  assert.equal(body.get('code_verifier'), start.stateRecord.arguments.oauthCodeVerifier);
+  assert.equal(body.get('grant_type'), 'authorization_code');
+  const stored = JSON.stringify(Array.from(h.cache.values.entries()));
+  for (const secret of [start.pollToken, start.sessionToken, h.state.idToken, h.properties.getProperty('GOOGLE_OAUTH_CLIENT_SECRET')]) {
+    assert.equal(stored.includes(secret), false);
+    assert.equal(result.callbackOutput.getContent().includes(secret), false);
+  }
 });
-
-test('missing, malformed, unsigned, invalid-signature, and unknown-key tokens fail closed', () => {
-  const harness = multiDomainHarness();
-  const valid = harness.issueIdToken('admin@yru.ac.th', { hd: 'yru.ac.th' });
-  const unsignedSegments = valid.split('.').slice(0, 2).concat('').join('.');
-  const unknownKid = harness.issueIdToken('admin@yru.ac.th', { hd: 'yru.ac.th' }, {
-    header: { kid: 'unknown-google-key' }
-  });
-  const missingKid = harness.issueIdToken('admin@yru.ac.th', { hd: 'yru.ac.th' }, {
-    header: { kid: undefined }
-  });
-
-  [
-    '',
-    'not-a-jwt',
-    unsignedSegments,
-    corruptSignature(valid),
-    unknownKid,
-    missingKid
-  ].forEach((token) => {
-    expectError(harness.invokeWithToken('listEquipment', token, {}), 'UNAUTHENTICATED');
-  });
-});
-
-test('wrong audience, issuer, expiry, verification state, and hosted domain are rejected', () => {
-  const harness = multiDomainHarness();
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  const invalidClaims = [
-    { aud: '999999999999-attacker.apps.googleusercontent.com' },
-    { iss: 'https://attacker.example' },
-    { exp: nowSeconds - 1, iat: nowSeconds - 3600 },
-    { email_verified: false },
-    { hd: undefined },
-    { hd: 'other.example' },
-    { azp: '999999999999-attacker.apps.googleusercontent.com' }
+test('invalid token signatures, issuer, audience, expiry and nonce fail during callback', () => {
+  const invalid = [
+    { claims: { iss: 'https://attacker.example' } },
+    { claims: { aud: 'attacker-client' } },
+    { claims: { azp: 'attacker-client' } },
+    { claims: { exp: 1, iat: 0 } },
+    { claims: { email_verified: false } },
+    { claims: { nonce: 'wrong' } },
+    { claims: { nonce: undefined } },
+    { claims: { hd: 'wrong.example' } },
+    { idToken: 'invalid.jwt.signature' },
+    { tokenOptions: { header: { alg: 'none' } } },
+    { tokenOptions: { header: { kid: 'unknown-key' } } }
   ];
-
-  invalidClaims.forEach((claims) => {
-    const token = harness.issueIdToken('admin@yru.ac.th', claims);
-    expectError(harness.invokeWithToken('getDashboard', token), 'UNAUTHENTICATED');
-  });
+  for (const options of invalid) {
+    const h = harness();
+    const result = login(h, 'admin@yru.ac.th', options);
+    expectError(result.pollResponse, 'UNAUTHENTICATED');
+    expectError(h.invokeWithToken('getDashboard', result.start.sessionToken), 'UNAUTHENTICATED');
+  }
 });
-
-test('a valid Google token from an unallowed domain is forbidden before Users lookup', () => {
-  const harness = multiDomainHarness();
-  const token = harness.issueIdToken('outsider@other.example', { hd: 'other.example' });
-  expectError(harness.invokeWithToken('listEquipment', token, {}), 'FORBIDDEN');
+test('outside domain, missing Users row, inactive and unsupported role fail closed', () => {
+  const h = harness();
+  createUser(h, { suffix: 'inactive', email: 'inactive@gmail.com', status: 'INACTIVE' });
+  for (const [email, code] of [['outside@other.example', 'FORBIDDEN'], ['missing@gmail.com', 'FORBIDDEN'], ['inactive@gmail.com', 'USER_DISABLED']]) {
+    expectError(login(h, email).pollResponse, code);
+  }
+  h.replaceCell('Users', 'user_id', 'USR-000001', 'role', 'OWNER');
+  expectError(login(h, 'admin@yru.ac.th').pollResponse, 'FORBIDDEN');
 });
-
-test('JWKS transport or response failure does not admit a signed-in user', () => {
-  const unavailable = multiDomainHarness();
-  unavailable.setJwks({ error: 'unavailable' }, 503);
-  expectError(unavailable.invoke('listEquipment', {}), 'AUTH_SERVICE_UNAVAILABLE');
-
-  const malformed = multiDomainHarness();
-  malformed.setJwks({ keys: [] }, 200);
-  expectError(malformed.invoke('listEquipment', {}), 'AUTH_SERVICE_UNAVAILABLE');
+test('missing session fails on every business RPC and a Google JWT is not an app session', () => {
+  const h = harness();
+  for (const name of PUBLIC_RPC_NAMES) expectError(h.invokeWithToken(name, ''), 'UNAUTHENTICATED');
+  expectError(h.invokeWithToken('getDashboard', h.state.idToken), 'UNAUTHENTICATED');
 });
-
-test('an unknown Users identity stays forbidden even when legacy auto-provision is enabled', () => {
-  const harness = multiDomainHarness({
-    properties: { AUTO_PROVISION_USERS: 'true' }
-  });
-  const before = {
-    users: harness.records('Users').length,
-    operations: harness.records('Operations').length,
-    history: harness.records('History').length
-  };
-
-  harness.setTokenIdentity('unknown.external@gmail.com', { hd: undefined });
-  expectError(harness.invoke('getDashboard'), 'FORBIDDEN');
-  assert.deepEqual({
-    users: harness.records('Users').length,
-    operations: harness.records('Operations').length,
-    history: harness.records('History').length
-  }, before);
+test('callback and poll are one-time and incorrect poll proof cannot redeem a flow', () => {
+  const h = harness();
+  const start = h.startOAuth();
+  expectError(h.invokeRaw('completeOAuthSignIn', start.flowId, 'poll1_' + 'a'.repeat(43)), 'UNAUTHENTICATED');
+  const result = h.finishOAuth(start);
+  expectOk(result.pollResponse);
+  expectError(h.invokeRaw('completeOAuthSignIn', start.flowId, start.pollToken), 'UNAUTHENTICATED');
+  const count = h.state.fetches.length;
+  assert.match(h.invokeRaw('googleOAuthCallback_', result.event).getContent(), /ไม่สำเร็จ/);
+  assert.equal(h.state.fetches.length, count);
 });
-
-test('an inactive external Users row is denied after successful token verification', () => {
-  const harness = multiDomainHarness();
-  const inactive = createUser(harness, {
-    suffix: 'inactive-gmail',
-    email: 'inactive.borrower@gmail.com',
-    status: 'INACTIVE'
-  });
-
-  harness.setTokenIdentity(inactive.email, { hd: undefined });
-  expectError(harness.invoke('getDashboard'), 'USER_DISABLED');
+test('tampered callback state, nonce, PKCE, duplicate parameters and expired flow never create a session', () => {
+  for (const field of ['oauthCallbackKey', 'oauthNonce', 'oauthCodeVerifier']) {
+    const h = harness();
+    const start = h.startOAuth();
+    const result = h.finishOAuth(start, { eventOverrides: { parameter: { [field]: 'tampered' } } });
+    assert.equal(result.pollResponse.data.status, 'PENDING');
+    expectError(h.invokeWithToken('getDashboard', start.sessionToken), 'UNAUTHENTICATED');
+  }
+  const h = harness();
+  const start = h.startOAuth();
+  h.finishOAuth(start, { eventOverrides: { parameters: { code: ['one', 'two'] } }, skipPoll: true });
+  expectError(h.invokeWithToken('getDashboard', start.sessionToken), 'UNAUTHENTICATED');
+  h.advanceTime(601);
+  expectError(h.invokeRaw('completeOAuthSignIn', start.flowId, start.pollToken), 'UNAUTHENTICATED');
+  assert.match(h.finishOAuth(start, { skipPoll: true }).callbackOutput.getContent(), /ไม่สำเร็จ/);
 });
-
-test('verified USER cannot escalate through token claims, payload fields, or deployer Session', () => {
-  const harness = multiDomainHarness();
-  const user = createUser(harness, {
-    suffix: 'no-escalation',
-    email: 'ordinary.borrower@gmail.com'
-  });
-  const before = {
-    categories: harness.records('Categories').length,
-    operations: harness.records('Operations').length,
-    history: harness.records('History').length
-  };
-
-  assert.equal(harness.state.activeEmail, 'admin@yru.ac.th',
-    'the editor/deployer Session remains admin to prove it is not visitor identity');
-  harness.setTokenIdentity(user.email, {
-    hd: undefined,
-    role: 'ADMIN',
-    isAdmin: true
-  });
-  expectError(harness.invoke('adminCreateCategory', {
-    command_id: 'token-claim-escalation',
-    category_name: 'Escalated category',
-    prefix: 'ESC',
-    status: 'ACTIVE',
-    actor_email: 'admin@yru.ac.th',
-    role: 'ADMIN'
-  }), 'FORBIDDEN');
-
-  assert.deepEqual({
-    categories: harness.records('Categories').length,
-    operations: harness.records('Operations').length,
-    history: harness.records('History').length
-  }, before);
-  assert.equal(harness.records('Categories')
-    .some((record) => record.category_name === 'Escalated category'), false);
+test('attacker-initiated authorization cannot be completed by another visitor context', () => {
+  const h = harness();
+  h.setVisitorKey('attacker');
+  const start = h.startOAuth();
+  const result = h.finishOAuth(start, { visitorKey: 'victim', skipPoll: true });
+  assert.match(result.callbackOutput.getContent(), /ไม่สำเร็จ/);
+  h.setVisitorKey('attacker');
+  assert.equal(expectOk(h.invokeRaw('completeOAuthSignIn', start.flowId, start.pollToken)).status, 'PENDING');
+  expectError(h.invokeWithToken('getDashboard', start.sessionToken), 'UNAUTHENTICATED');
+  h.setVisitorKey('');
+  expectError(h.startOAuth().response, 'UNAUTHENTICATED');
+});
+test('token endpoint errors and consent denial do not activate the session', () => {
+  for (const options of [{ tokenStatus: 400 }, { tokenBody: 'not-json' }, { tokenBody: {} }, { tokenFetchError: new Error('network') }, { oauthError: 'access_denied' }]) {
+    const h = harness();
+    const result = login(h, 'admin@yru.ac.th', options);
+    assert.equal(result.pollResponse.ok, false);
+    expectError(h.invokeWithToken('getDashboard', result.start.sessionToken), 'UNAUTHENTICATED');
+  }
+});
+test('session expiry, eviction, logout, current user status and role are enforced', () => {
+  for (const action of ['expiry', 'eviction', 'logout', 'inactive', 'role']) {
+    const h = harness();
+    const token = h.state.sessionToken;
+    if (action === 'expiry') h.advanceTime(3601);
+    if (action === 'eviction') h.cache.values.clear();
+    if (action === 'logout') expectOk(h.invokeRaw('logoutSession', token));
+    if (action === 'inactive') h.replaceCell('Users', 'user_id', 'USR-000001', 'status', 'INACTIVE');
+    if (action === 'role') h.replaceCell('Users', 'user_id', 'USR-000001', 'role', 'USER');
+    expectError(h.invokeWithToken('adminListUsers', token, {}), action === 'inactive' ? 'USER_DISABLED' : action === 'role' ? 'FORBIDDEN' : 'UNAUTHENTICATED');
+  }
+});
+test('signed role claims and browser payload cannot elevate a USER to ADMIN', () => {
+  const h = harness();
+  createUser(h, { suffix: 'user', email: 'user@gmail.com' });
+  const activeCalls = h.state.activeUserCalls;
+  expectOk(login(h, 'user@gmail.com', { claims: { role: 'ADMIN', isAdmin: true } }).pollResponse);
+  const count = h.records('Categories').length;
+  expectError(h.invoke('adminCreateCategory', { role: 'ADMIN', actor_email: 'admin@yru.ac.th', command_id: 'escalation-test', category_name: 'Escalated', prefix: 'ESC' }), 'FORBIDDEN');
+  assert.equal(h.records('Categories').length, count);
+  assert.equal(h.state.activeUserCalls, activeCalls);
+});
+test('JWKS caching applies to callbacks, not business RPCs; failures deny new sign-ins', () => {
+  const h = harness();
+  login(h, 'admin@yru.ac.th');
+  assert.equal(h.state.fetches.filter(x => x.url === GOOGLE_JWKS_URL).length, 1);
+  const count = h.state.fetches.length;
+  expectOk(h.invoke('getDashboard'));
+  assert.equal(h.state.fetches.length, count);
+  h.setJwks({ keys: [] }, 503);
+  expectError(login(h, 'admin@yru.ac.th').pollResponse, 'AUTH_SERVICE_UNAVAILABLE');
+});
+test('unknown users remain unprovisioned even if a legacy property is changed after setup', () => {
+  const h = harness();
+  h.properties.setProperty('AUTO_PROVISION_USERS', 'true');
+  const count = h.records('Users').length;
+  expectError(login(h, 'missing@gmail.com').pollResponse, 'FORBIDDEN');
+  assert.equal(h.records('Users').length, count);
 });

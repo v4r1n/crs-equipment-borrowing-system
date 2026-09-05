@@ -8,7 +8,7 @@
 - Backend: Google Apps Script V8
 - Database: Google Sheets
 - File storage: Google Drive
-- Authentication: Google Identity Services พร้อมตรวจ Google ID token ฝั่ง Apps Script
+- Authentication: Google OAuth 2.0 / OpenID Connect แบบ server-side Authorization Code flow พร้อม PKCE
 - QR: ไลบรารีโอเพนซอร์สบนฝั่งเบราว์เซอร์
 
 ## ขอบเขต V1
@@ -27,12 +27,12 @@
 
 ## ข้อกำหนดสำคัญด้านบัญชี
 
-ระบบรองรับ Google Workspace และบัญชี `@gmail.com` ตาม exact allowlist ใน `ALLOWED_DOMAINS` โดย fallback ไปอ่าน `ALLOWED_DOMAIN` เดิมเมื่อยังไม่ได้ตั้งค่ารายการใหม่ Browser รับ Google ID token จาก Google Identity Services และทุก RPC ส่ง token ให้ backend ตรวจ signature, issuer, audience, expiry และอีเมลที่ Google ยืนยัน ก่อนตรวจ Users row, `ACTIVE` status และ role อีกชั้น ระบบไม่ใช้ `Session.getActiveUser()` เป็น visitor identity, ไม่สร้าง Users row อัตโนมัติ และ fail closed เมื่อหลักฐานหรือสิทธิ์ไม่ครบ
+ระบบรองรับ Google Workspace และบัญชี `@gmail.com` ตาม exact allowlist ใน `ALLOWED_DOMAINS` โดย fallback ไปอ่าน `ALLOWED_DOMAIN` เดิมเมื่อยังไม่ได้ตั้งค่ารายการใหม่ Browser เปิด Google Authorization endpoint ใน popup ส่วน Apps Script รับ authorization code ที่ callback `/usercallback`, แลก token ฝั่ง server แล้วตรวจลายเซ็น, issuer, audience, expiry, nonce และอีเมลที่ Google ยืนยัน ก่อนตรวจ Users row, `ACTIVE` status และ role อีกชั้น Browser ได้เฉพาะ opaque application session อายุสั้นที่เก็บในหน่วยความจำและแนบกับ business RPC ระบบไม่ใช้ `Session.getActiveUser()` เป็น visitor identity, ไม่สร้าง Users row อัตโนมัติ และ fail closed เมื่อหลักฐานหรือสิทธิ์ไม่ครบ
 
 ## การติดตั้ง
 
-ทำตาม [คู่มือติดตั้งและ Deploy](docs/DEPLOYMENT.md) ซึ่งครอบคลุมการสร้าง Google Sheet/Drive folder, นำไฟล์ runtime 44 ไฟล์เข้า Apps Script, สร้าง Web OAuth Client, ตั้ง Script Properties, bootstrap Admin, authorize, deploy แบบ `USER_DEPLOYING` + `ANYONE` สำหรับผู้ที่ลงชื่อเข้าใช้แล้ว, ทดสอบ Workspace/Gmail, rollback และดูแลหลังเปิดใช้งาน ห้ามใช้ `ANYONE_ANONYMOUS`
+ทำตาม [คู่มือติดตั้งและ Deploy](docs/DEPLOYMENT.md) ซึ่งครอบคลุมการสร้าง Google Sheet/Drive folder, นำไฟล์ runtime 45 ไฟล์เข้า Apps Script, สร้าง Web OAuth Client พร้อม exact Authorized redirect URI, ตั้ง Script Properties, bootstrap Admin, authorize, deploy แบบ `USER_DEPLOYING` + `ANYONE` สำหรับผู้ที่ลงชื่อเข้าใช้แล้ว, ทดสอบ Workspace/Gmail, rollback และดูแลหลังเปิดใช้งาน ห้ามใช้ `ANYONE_ANONYMOUS`
 
 ## สถานะ
 
-Source สำหรับ V1 ทั้ง 7 phases เสร็จแล้วบน branch `codex/initial-v1`; deployment แบบ domain-only เคยผ่านการทดสอบใน `yru.ac.th` แล้ว ส่วน release ที่เพิ่ม external Google Account ยังต้อง redeploy เป็น version ใหม่และผ่าน OAuth iframe-origin, Workspace/Gmail identity และ live acceptance ก่อนประกาศ production
+Source สำหรับ V1 ทั้ง 7 phases เสร็จแล้วบน branch `codex/initial-v1`; deployment แบบ domain-only เคยผ่านการทดสอบใน `yru.ac.th` แล้ว ส่วน release ที่เพิ่ม external Google Account ยังต้องตั้ง Web OAuth Client/secret และ callback URI, redeploy เป็น version ใหม่ และผ่าน Authorization Code flow กับ Workspace/Gmail รวมถึง live acceptance ก่อนประกาศ production

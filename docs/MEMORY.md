@@ -1,19 +1,20 @@
 # Project Memory
 
-Last updated: 2026-09-01
+Last updated: 2026-09-04
 
 ## Current state
 
 - Active branch: `codex/initial-v1`
-- Current version: `0.2.0` release candidate; the prior domain-only `yru.ac.th` deployment was reported working, while the external-account release still needs OAuth configuration, redeployment, and live sign-off
+- Current version: `0.2.0` release candidate; the prior domain-only `yru.ac.th` deployment was reported working, while the external-account release now uses server-side OAuth/OIDC and still needs Web OAuth client/redirect configuration, redeployment, and live sign-off
 - Completed: Phase 1 — architecture, schema, workflow, project rules, migration direction
 - Completed: Phase 2 — manifest/config, schema setup, immutable migration ledger, sequences, repositories, utilities, validation, cache helpers
-- Completed: Phase 3 — verified Google ID-token authentication for Workspace/Gmail, guarded RPCs, domain services, durable operation recovery, Drive images, integrity audit, and schema v3 migrations
+- Completed: Phase 3 — server-verified Google identity for Workspace/Gmail, guarded RPCs, domain services, durable operation recovery, Drive images, integrity audit, and schema v3 migrations
 - Completed: Phase 4 — responsive Thai SPA shell, navigation, dashboards, equipment/borrowing/admin screens, forms, state handling, and client RPC integration
 - Completed: Phase 5 — canonical QR generation/display, PNG sticker download, image-capture/file scanning, strict payload validation, and Admin exact-asset handoff
 - Completed: Phase 6 — automated source contracts, in-memory Apps Script workflow tests, local-browser acceptance, responsive verification, and ID-boundary hardening
-- Completed: Phase 7 — deployment guide, exact configuration/source inventory, OAuth/GIS setup, logged-in-account rollout, User/Admin acceptance, stable-URL release/rollback, monitoring, backup, and troubleshooting handoff
-- Next: configure a Web OAuth Client and exact HTML-service origin, set `GOOGLE_OAUTH_CLIENT_ID` plus `ALLOWED_DOMAINS=yru.ac.th,gmail.com`, update the existing versioned deployment, and complete Workspace/Gmail live acceptance before go-live
+- Completed: Phase 7 — deployment guide, exact configuration/source inventory, OAuth setup, logged-in-account rollout, User/Admin acceptance, stable-URL release/rollback, monitoring, backup, and troubleshooting handoff
+- Completed: authentication redesign — replaced iframe GIS with server-side Authorization Code/OIDC, protected callback, state/nonce/PKCE, one-time flow records, and per-visitor opaque application sessions
+- Next: create a Web application OAuth client with exact `/usercallback` redirect, set its Client ID/secret plus `ALLOWED_DOMAINS=yru.ac.th,gmail.com`, deploy a temporary pilot, and complete separate-profile Workspace/Gmail callback/session acceptance before updating production
 
 ## Frozen contracts
 
@@ -21,13 +22,13 @@ Last updated: 2026-09-01
 - One active workflow per asset; a pending request is a hard hold.
 - Borrow and Equipment statuses use canonical English enums and synchronized transitions in BorrowService.
 - Overdue is derived; return condition and disposition are separate.
-- Visitor identity comes only from a backend-verified Google ID token; exact domain allowlist, one Active Users row, and a supported current role are all required.
+- Visitor identity comes only from an ID token obtained and verified inside the server-side OAuth callback; business RPCs require a short-lived opaque session plus exact domain allowlist, one Active Users row, and a supported current role.
 - QR stores/encodes a canonical detail URL but the URL is derived and refreshable.
 - Sheet repositories are the only storage boundary so a future SQL migration preserves services and workflow.
 
 ## Configuration still supplied by deployer
 
-`SPREADSHEET_ID`, `DRIVE_FOLDER_ID`, `ADMIN_EMAILS`, `ALLOWED_DOMAINS`, `GOOGLE_OAUTH_CLIENT_ID`, and optionally `WEB_APP_URL` via Script Properties. `ALLOWED_DOMAIN` remains only as a legacy fallback when `ALLOWED_DOMAINS` is absent or blank.
+`SPREADSHEET_ID`, `DRIVE_FOLDER_ID`, `ADMIN_EMAILS`, `ALLOWED_DOMAINS`, `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, and optionally `WEB_APP_URL`, `AUTH_FLOW_TTL_SECONDS`, and `AUTH_SESSION_TTL_SECONDS` via Script Properties. `ALLOWED_DOMAIN` remains only as a legacy fallback when `ALLOWED_DOMAINS` is absent or blank.
 
 ## Phase 1 verification
 
@@ -48,10 +49,10 @@ Last updated: 2026-09-01
 
 - All 24 Apps Script files pass individual and combined V8-compatible syntax compilation; `appsscript.json` parses as valid JSON and `git diff --check` is clean.
 - Static contracts verify schema version 3, the exact 21-column Operations header, `BorrowItems.is_required`, all three immutable migration IDs, and the frozen SHA-256 Base64URL checksum for migration 003.
-- Verified all 32 public application RPC wrappers receive an ID token first, verify its Google signature/claims, then enforce a current Users-row user/admin guard; every journaled mutation action has an admin recovery route.
+- Verified all 32 business RPC wrappers enforce a current Users-row user/admin guard; the original browser-ID-token transport from this phase was later superseded by ADR-018's opaque application session.
 - Verified source contains no `Session.getEffectiveUser()` and uses `Session.getActiveUser()` only for the private editor-run setup operator, never visitor identity. Setup validates the caller inside the Script Lock; first bootstrap requires a configured allowlisted admin, while every later run requires an active Users-row admin.
 - Read-only recovery/security review covered exact source/target replay, role-specific DTO redaction, active-workflow holds, return checklist evidence, result hashes, safe image aborts, unique reservations, cache epochs, and batch row updates. It also reproduced and closed partial equipment-edit recovery, setup authorization races, stale auto-provision authorization, uncertain Drive-resource cleanup, and invalid `ABORTED` evidence cases.
-- Live Workspace/Gmail GIS identity, Apps Script authorization, Drive sharing/resource-key behavior, browser RPC, and deployed web-app acceptance remain because they require deployer-owned resources and a Web OAuth Client.
+- Live Workspace/Gmail OAuth callback/session identity, Apps Script authorization, Drive sharing/resource-key behavior, browser RPC, and deployed web-app acceptance remain because they require deployer-owned resources and a Web OAuth Client.
 
 ## Phase 4 verification
 
@@ -61,7 +62,7 @@ Last updated: 2026-09-01
 - Admin workflows use current row versions and stable browser command IDs for approve, reject, checkout, return inspection, equipment/user/category mutations, and operation abort. Return inspection sends every immutable BorrowItems snapshot and enforces required-item plus condition/disposition rules before the server revalidates them.
 - Read-only frontend review closed deep-link filter gaps, stale category options, an invalid catalog pagination structure, exact Asset/Borrow ID validation, dashboard admin routing/latest-borrow selection, route-selector hardening, and the signed-in admin email orphaning case. The email rule is also enforced in `UserService.gs`, not only by a read-only field.
 - HTML structure checks found no duplicate static IDs, unbalanced tags/CSS braces, mojibake, inline event-handler attributes, `javascript:` URLs, or unfinished runtime markers.
-- Live responsive layout, GIS inside the HTML-service iframe, `google.script.run`, Workspace/Gmail identity, and browser accessibility acceptance remain because the deployment configuration and accounts are deployer-owned.
+- Live responsive layout, OAuth popup/callback, `google.script.run`, Workspace/Gmail identity, and browser accessibility acceptance remain because the deployment configuration and accounts are deployer-owned.
 
 ## Phase 5 verification
 
@@ -75,24 +76,24 @@ Last updated: 2026-09-01
 
 ## Phase 6 verification
 
-- `npm run test` now passes 46 automated tests: eleven source/security contracts, twenty-seven backend service tests, and eight Playwright browser acceptance tests.
+- The Phase 6 baseline passed 46 automated tests: eleven source/security contracts, twenty-seven backend service tests, and eight Playwright browser acceptance tests.
 - The backend suite runs the real setup, repository, authentication, operation journal, equipment, borrowing, user, category, dashboard, history, and integrity services against faithful in-memory Spreadsheet, Properties, Cache, Lock, Session, Utilities, and Script service doubles.
 - End-to-end service coverage verifies fail-closed identity and Admin permissions, the guarded request → approve → checkout → return-request → inspected-return lifecycle, idempotent retries, double-book prevention including a STARTED operation before Borrow ID allocation, overdue boundaries, return checklist rules, append-only History, setup idempotency, migration checksum drift, duplicate business keys, and integrity-audit findings.
 - Sequence allocation now preserves exact six-digit IDs and exact three-digit Category IDs at the upper boundary. Requests that cannot fit the frozen format fail atomically with `ID_EXHAUSTED`; public User/Category validators and BorrowItems recovery checks reject over-width IDs.
-- The only callable top-level server functions are the 32 token-guarded RPC wrappers plus deliberate `doGet`; setup and the error constructor are private as `setupSystem_` and `AppError_`.
-- Playwright assembles the real Apps Script HTML includes locally, uses deterministic GIS, `google.script.run`, and Bootstrap compatibility doubles, and passes eight acceptance scenarios. It verifies a nonblank ID token on every observed RPC, token-expiry reauthentication/re-bootstrap, QR sticker download/copy, strict scan/manual fallback, Admin exact-asset handoff, guarded Admin action modals, Thai failure feedback, and 18 route/viewport combinations across 320, 768, and 1440 pixels without document overflow.
+- The callable top-level server surface is the 32 session-guarded business RPCs, three narrow auth lifecycle RPCs, and deliberate `doGet`; callback/setup/error helpers remain private.
+- Playwright assembles the real Apps Script HTML includes locally, uses deterministic server-OAuth and `google.script.run` doubles, and covers memory-only sessions, expiry reauthentication/re-bootstrap, QR sticker download/copy, strict scan/manual fallback, Admin exact-asset handoff, guarded Admin action modals, Thai failure feedback, and route/viewport combinations across 320, 768, and 1440 pixels without document overflow.
 - The 320-pixel Admin tab strip is horizontally contained and remains scrollable; quick filters and data tables scroll within their own regions.
 - Actual Workspace identity, Apps Script authorization prompts/quotas, Google Sheets and Drive behavior, deployed HTML-service sandbox behavior, physical sticker scanning, and native mobile camera/file-picker behavior remain Phase 7 deployer acceptance because they require organization-owned resources and devices.
 
 ## Phase 7 verification
 
-- Final `npm run test` passes 46 automated tests: eleven source/security/deployment contracts, twenty-seven backend service/setup/authentication tests, and eight Playwright browser acceptance tests.
-- Traced the deployment procedure against all 44 runtime source files, all 11 managed Sheet schemas, all Script Property names and numeric constraints, first-admin bootstrap rules, image-sharing modes, setup/migration behavior, OAuth/GIS configuration, and canonical `/exec` QR URL validation.
+- The server-side OAuth redesign passed all 48 automated tests on 2026-09-05: eleven source/security/deployment contracts, twenty-eight backend tests, and nine Playwright browser acceptance tests. Live callback/channel-binding acceptance remains unsigned.
+- Traced the deployment procedure against all 45 runtime source files, all 11 managed Sheet schemas, all Script Property names and numeric constraints, first-admin bootstrap rules, image-sharing modes, setup/migration behavior, server-side OAuth/OIDC configuration, and canonical `/exec` QR URL validation.
 - Production topology remains an organization-controlled deployer with `USER_DEPLOYING`, private Sheet/Drive ACLs, and a stable versioned `/exec`; Web app access is `ANYONE` for logged-in Google Accounts and explicitly never `ANYONE_ANONYMOUS`.
-- Every RPC receives a GIS ID token first. Backend verification covers strict RS256/PKCS#1 signature validation against cached rotating Google JWKS, issuer, exact OAuth audience/authorized party, token times, subject, verified email, Gmail/Workspace authoritative-domain rules, exact `ALLOWED_DOMAINS`, exactly one Active Users row, and current role. Unknown rows never auto-provision.
-- Added automated cases for `@yru.ac.th`, `@gmail.com`, modern-domain precedence/legacy fallback, missing/malformed/bad-signature/wrong-key/wrong-audience/wrong-issuer/expired/unverified/wrong-hosted-domain tokens, JWKS failure/cache reuse/freshness/quota hardening, unknown and inactive users, and token/payload/deployer-Session privilege escalation.
-- The private `setupSystem_()` preflights OAuth client, domains, image-sharing policy, configured Drive folder access, and exact current Web app URL before managed-sheet mutation, then writes a structured success event. Drive sharing exceptions map to `DRIVE_SHARING_FAILED`.
+- Google authorization runs through Apps Script `/usercallback`: StateTokenBuilder state, OIDC nonce, PKCE S256, one-time ScriptCache records, server-side code exchange, and strict RS256/PKCS#1 ID-token verification precede Users authorization. Business RPCs receive only an opaque application session and re-read exactly one Active Users row/current role; unknown rows never auto-provision.
+- Automated coverage includes `@yru.ac.th`, `@gmail.com`, allowlist fallback, callback/state/nonce/PKCE/replay failures, malformed/bad-signature/wrong-key/wrong-audience/wrong-issuer/expired/unverified/wrong-hosted-domain tokens, session absence/expiry/isolation/logout, JWKS hardening, unknown/inactive users, and privilege escalation.
+- The private `setupSystem_()` preflights OAuth client ID/secret, auth TTLs, domains, image-sharing policy, configured Drive folder access, and exact current Web app URL before managed-sheet mutation, then writes a structured success event. Drive sharing exceptions map to `DRIVE_SHARING_FAILED`.
 - QR URL derivation accepts only the canonical current `script.google.com/macros/s/.../exec` deployment; `/dev`, redirect/external hosts, credentials/ports, query/fragment suffixes, extra paths, and mismatched deployments fail closed.
-- Manifest scopes are `drive`, `spreadsheets`, `userinfo.email`, and `script.external_request`; the last is used only to fetch Google's JWKS. Deployment documentation covers exact HTML-service iframe-origin pilot, OAuth External audience, external-account image-link boundary, non-retroactive sharing, restricted editors, stable-URL upgrades, rollback, backups, monitoring, quotas, and troubleshooting.
-- Reviewed current official Google documentation for GIS setup/button/token verification, OpenID Connect claims/JWKS caching, Apps Script Session limitations, HTML-service iframe restrictions, Web app access/execute-as settings, Script Properties, scopes, deployments, logging, and quotas on 2026-09-01.
-- The user reports the earlier domain-only `yru.ac.th` deployment works. The `0.2.0` external-account release is not yet live-verified because its Web OAuth Client ID, exact iframe origin registration, redeployment, Gmail Users row, image-sharing decision, and cross-account acceptance remain deployer actions. The acceptance matrix stays unsigned for those checks.
+- Manifest scopes are `drive`, `spreadsheets`, `userinfo.email`, and `script.external_request`; the last supports Google's token endpoint and JWKS. Deployment documentation covers the exact callback URI, OAuth External audience, temporary-user-key pilot, external-account image-link boundary, non-retroactive sharing, restricted editors, stable-URL upgrades, rollback, backups, monitoring, quotas, and troubleshooting.
+- Reviewed official Google documentation for Web-server OAuth/OIDC, Apps Script state-token callbacks, ID-token verification/JWKS caching, Session temporary-user-key limitations, Web app access/execute-as settings, Script Properties, scopes, deployments, logging, and quotas through 2026-09-04.
+- The user reports the earlier domain-only `yru.ac.th` deployment works. The `0.2.0` external-account release is not yet live-verified because its Web OAuth Client ID/secret, exact `/usercallback` redirect, temporary pilot/redeployment, Gmail Users row, image-sharing decision, and cross-account acceptance remain deployer actions. The acceptance matrix stays unsigned for those checks.

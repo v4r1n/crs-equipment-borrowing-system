@@ -512,9 +512,11 @@
       '<dl class="row mb-0"><dt class="col-sm-4 text-secondary">รหัสผู้ใช้</dt><dd class="col-sm-8">' +
       CRS.escapeHtml(session.user_id) + '</dd><dt class="col-sm-4 text-secondary">หน่วยงาน</dt><dd class="col-sm-8">' +
       CRS.escapeHtml(session.department || 'ไม่ระบุ') + '</dd><dt class="col-sm-4 text-secondary">สิทธิ์</dt><dd class="col-sm-8">' +
-      CRS.statusBadge(session.role) + '</dd></dl><hr><p class="small text-secondary mb-0">' +
-      'ระบบใช้บัญชี Google Workspace ที่กำลังลงชื่อเข้าใช้ หากต้องการเปลี่ยนบัญชีให้เปิดลิงก์ Web app ด้วยบัญชีองค์กรที่ต้องการ' +
-      '</p></div></div></section>';
+      CRS.statusBadge(session.role) + '</dd></dl><hr><p class="small text-secondary mb-3">' +
+      'ระบบยืนยันบัญชี Google ผ่าน OAuth และตรวจสิทธิ์จากรายชื่อผู้ใช้ทุกครั้ง' +
+      '</p><button class="btn btn-outline-danger" type="button" data-action="sign-out">' +
+      '<i class="bi bi-box-arrow-right me-2" aria-hidden="true"></i>ออกจากระบบ / เปลี่ยนบัญชี' +
+      '</button></div></div></section>';
   }
 
   CRS.registerRoute('account', renderAccount);
@@ -611,6 +613,8 @@
     }
     const retry = event.target.closest('[data-action="retry-bootstrap"]');
     if (retry) bootstrapApplication();
+    const signOut = event.target.closest('[data-action="sign-out"]');
+    if (signOut && CRS.auth && typeof CRS.auth.signOut === 'function') CRS.auth.signOut();
   });
 
   if (global.google && google.script && google.script.history) {

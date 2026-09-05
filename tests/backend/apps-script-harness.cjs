@@ -9,9 +9,12 @@ const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 const SOURCE_DIRECTORY = path.join(PROJECT_ROOT, 'src');
 
 const GOOGLE_JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs';
+const GOOGLE_OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const TEST_GOOGLE_KEY_ID = 'crs-test-google-key';
 const TEST_GOOGLE_OAUTH_CLIENT_ID =
   '123456789012-crsequipmenttest.apps.googleusercontent.com';
+const TEST_GOOGLE_OAUTH_CLIENT_SECRET = 'GOCSPX-test-client-secret-not-real';
+const TEST_SCRIPT_ID = 'testScriptId_0123456789abcdefghijklmnop';
 const PUBLIC_RPC_NAMES = Object.freeze([
   'adminAbortOperation',
   'adminApproveBorrow',
@@ -72,6 +75,7 @@ const SOURCE_FILES = [
   'HistoryService.gs',
   'OperationService.gs',
   'IdentityService.gs',
+  'OAuthService.gs',
   'Auth.gs',
   'CategoryService.gs',
   'EquipmentService.gs',
@@ -91,6 +95,14 @@ function base64Url(value) {
   return Buffer.from(value).toString('base64url');
 }
 
+function sha256Base64Url(value) {
+  return crypto.createHash('sha256').update(String(value), 'utf8').digest('base64url');
+}
+
+function browserSecret(prefix, counter) {
+  return `${prefix}${sha256Base64Url(`browser-secret:${prefix}:${counter}`)}`;
+}
+
 function defaultHostedDomain(email) {
   const normalized = String(email || '').trim().toLowerCase();
   if (!normalized || normalized.endsWith('@gmail.com')) return undefined;
@@ -98,7 +110,7 @@ function defaultHostedDomain(email) {
 }
 
 function signGoogleIdToken(email, overrides = {}, options = {}) {
-  const nowSeconds = Math.floor(Date.now() / 1000);
+  const nowSeconds = Math.floor((options.nowMs === undefined ? Date.now() : options.nowMs) / 1000);
   const normalizedEmail = String(email || '').trim().toLowerCase();
   const payload = {
     iss: 'https://accounts.google.com',
@@ -333,17 +345,45 @@ class MemoryProperties {
 }
 
 class MemoryCache {
-  constructor() { this.values = new Map(); }
-  get(key) { return this.values.has(String(key)) ? this.values.get(String(key)) : null; }
+  constructor(now) {
+    this.now = now;
+    this.values = new Map();
+    this.expirations = new Map();
+  }
+
+  get(key) {
+    const normalized = String(key);
+    const expiresAt = this.expirations.get(normalized);
+    if (expiresAt !== undefined && expiresAt <= this.now()) {
+      this.remove(normalized);
+      return null;
+    }
+    return this.values.has(normalized) ? this.values.get(normalized) : null;
+  }
+
   put(key, value, expirationInSeconds) {
     if (expirationInSeconds !== undefined &&
       (!Number.isFinite(Number(expirationInSeconds)) || Number(expirationInSeconds) < 1)) {
       throw new RangeError('Invalid cache expiration');
     }
-    this.values.set(String(key), String(value));
+    const normalized = String(key);
+    this.values.set(normalized, String(value));
+    if (expirationInSeconds === undefined) this.expirations.delete(normalized);
+    else this.expirations.set(normalized, this.now() + (Number(expirationInSeconds) * 1000));
   }
-  remove(key) { this.values.delete(String(key)); }
+
+  remove(key) {
+    const normalized = String(key);
+    this.values.delete(normalized);
+    this.expirations.delete(normalized);
+  }
+
   removeAll(keys) { (keys || []).forEach((key) => this.remove(key)); }
+
+  clear() {
+    this.values.clear();
+    this.expirations.clear();
+  }
 }
 
 class MemoryScriptLock {
@@ -455,19 +495,36 @@ function loadSources(context) {
 function createAppsScriptHarness(options = {}) {
   const state = {
     activeEmail: options.activeEmail === undefined ? 'admin@example.com' : String(options.activeEmail),
+    visitorKey: options.visitorKey || 'test-visitor:initial',
     webAppUrl: options.webAppUrl || 'https://script.google.com/macros/s/test-deployment/exec',
+    scriptId: options.scriptId || TEST_SCRIPT_ID,
+    nowMs: options.nowMs === undefined ? Date.now() : Number(options.nowMs),
     uuidCounter: 0,
+    browserSecretCounter: 0,
+    authorizationCodeCounter: 0,
+    stateTokenCounter: 0,
     flushCount: 0,
     fetches: [],
     jwks: options.jwks || { keys: [{ ...TEST_GOOGLE_PUBLIC_JWK }] },
     jwksStatus: options.jwksStatus || 200,
     jwksHeaders: options.jwksHeaders || { 'Cache-Control': 'public, max-age=3600' },
     fetchError: null,
-    idToken: ''
+    idToken: '',
+    sessionToken: '',
+    identityEmail: options.activeEmail === undefined ? 'admin@example.com' : String(options.activeEmail),
+    defaultTokenClaims: { ...(options.tokenClaims || {}) },
+    defaultTokenOptions: { ...(options.tokenOptions || {}) },
+    stateTokens: new Map(),
+    tokenExchanges: new Map(),
+    activeUserCalls: 0,
+    temporaryUserKeyCalls: 0
   };
   state.idToken = Object.prototype.hasOwnProperty.call(options, 'idToken')
     ? String(options.idToken || '')
-    : signGoogleIdToken(state.activeEmail, options.tokenClaims || {}, options.tokenOptions || {});
+    : signGoogleIdToken(state.identityEmail, state.defaultTokenClaims, {
+      ...state.defaultTokenOptions,
+      nowMs: state.nowMs
+    });
   const spreadsheet = new MemorySpreadsheet(options.spreadsheetId);
   const properties = new MemoryProperties({
     ALLOWED_DOMAINS: 'example.com',
@@ -475,10 +532,11 @@ function createAppsScriptHarness(options = {}) {
     ADMIN_EMAILS: 'admin@example.com',
     AUTO_PROVISION_USERS: 'false',
     GOOGLE_OAUTH_CLIENT_ID: TEST_GOOGLE_OAUTH_CLIENT_ID,
+    GOOGLE_OAUTH_CLIENT_SECRET: TEST_GOOGLE_OAUTH_CLIENT_SECRET,
     WEB_APP_URL: state.webAppUrl,
     ...(options.properties || {})
   });
-  const cache = new MemoryCache();
+  const cache = new MemoryCache(() => state.nowMs);
   const scriptLock = new MemoryScriptLock();
   const quietConsole = options.console || {
     log() {},
@@ -487,12 +545,78 @@ function createAppsScriptHarness(options = {}) {
     error() {}
   };
 
+  class HarnessDate extends Date {
+    constructor(...args) {
+      super(...(args.length ? args : [state.nowMs]));
+    }
+
+    static now() { return state.nowMs; }
+  }
+
+  function makeStateTokenBuilder() {
+    const record = {
+      method: '',
+      arguments: Object.create(null),
+      timeoutSeconds: 0
+    };
+    return {
+      withMethod(method) {
+        record.method = String(method || '');
+        return this;
+      },
+      withArgument(name, value) {
+        record.arguments[String(name)] = String(value);
+        return this;
+      },
+      withTimeout(seconds) {
+        record.timeoutSeconds = Number(seconds);
+        return this;
+      },
+      createToken() {
+        state.stateTokenCounter += 1;
+        const token = `test_state_${sha256Base64Url(
+          `${state.stateTokenCounter}|${state.nowMs}|${JSON.stringify(record)}`
+        )}`;
+        state.stateTokens.set(token, {
+          method: record.method,
+          arguments: { ...record.arguments },
+          timeoutSeconds: record.timeoutSeconds,
+          createdAt: state.nowMs
+        });
+        return token;
+      }
+    };
+  }
+
+  function tokenEndpointResponse(fetchOptions) {
+    const payload = new URLSearchParams(String(fetchOptions && fetchOptions.payload || ''));
+    const code = payload.get('code') || '';
+    const exchange = state.tokenExchanges.get(code);
+    if (!exchange) return makeHttpResponse(400, { error: 'invalid_grant' });
+    if (exchange.fetchError) throw exchange.fetchError;
+    if (exchange.expectedCodeVerifier &&
+      payload.get('code_verifier') !== exchange.expectedCodeVerifier) {
+      return makeHttpResponse(400, { error: 'invalid_grant' });
+    }
+    if (exchange.expectedRedirectUri &&
+      payload.get('redirect_uri') !== exchange.expectedRedirectUri) {
+      return makeHttpResponse(400, { error: 'redirect_uri_mismatch' });
+    }
+    return makeHttpResponse(exchange.statusCode, exchange.body, exchange.headers);
+  }
+
   const sandbox = {
     Buffer,
+    Date: HarnessDate,
     console: quietConsole,
     Session: {
       getActiveUser() {
+        state.activeUserCalls += 1;
         return { getEmail: () => state.activeEmail };
+      },
+      getTemporaryActiveUserKey() {
+        state.temporaryUserKeyCalls += 1;
+        return state.visitorKey;
       }
     },
     SpreadsheetApp: {
@@ -507,7 +631,21 @@ function createAppsScriptHarness(options = {}) {
     LockService: { getScriptLock: () => scriptLock },
     PropertiesService: { getScriptProperties: () => properties },
     CacheService: { getScriptCache: () => cache },
-    ScriptApp: { getService: () => ({ getUrl: () => state.webAppUrl }) },
+    ScriptApp: {
+      getService: () => ({ getUrl: () => state.webAppUrl }),
+      getScriptId: () => state.scriptId,
+      newStateToken: () => makeStateTokenBuilder()
+    },
+    HtmlService: {
+      createHtmlOutput(content) {
+        let title = '';
+        return {
+          getContent: () => String(content || ''),
+          getTitle: () => title,
+          setTitle(value) { title = String(value || ''); return this; }
+        };
+      }
+    },
     Utilities: makeUtilities(state),
     UrlFetchApp: {
       fetch(url, fetchOptions) {
@@ -518,10 +656,13 @@ function createAppsScriptHarness(options = {}) {
           state.fetchError = null;
           throw error;
         }
-        if (normalizedUrl !== GOOGLE_JWKS_URL) {
-          throw new Error(`Unexpected UrlFetchApp URL: ${normalizedUrl}`);
+        if (normalizedUrl === GOOGLE_OAUTH_TOKEN_URL) {
+          return tokenEndpointResponse(fetchOptions || {});
         }
-        return makeHttpResponse(state.jwksStatus, state.jwks, state.jwksHeaders);
+        if (normalizedUrl === GOOGLE_JWKS_URL) {
+          return makeHttpResponse(state.jwksStatus, state.jwks, state.jwksHeaders);
+        }
+        throw new Error(`Unexpected UrlFetchApp URL: ${normalizedUrl}`);
       }
     },
     DriveApp: {
@@ -536,7 +677,10 @@ function createAppsScriptHarness(options = {}) {
   loadSources(context);
 
   function issueIdToken(email, claims = {}, tokenOptions = {}) {
-    return signGoogleIdToken(email, claims, tokenOptions);
+    return signGoogleIdToken(email, claims, {
+      nowMs: state.nowMs,
+      ...tokenOptions
+    });
   }
 
   function setIdToken(idToken) {
@@ -544,23 +688,171 @@ function createAppsScriptHarness(options = {}) {
     return state.idToken;
   }
 
+  function nextBrowserSecret(prefix) {
+    state.browserSecretCounter += 1;
+    return browserSecret(prefix, state.browserSecretCounter);
+  }
+
+  function startOAuth(startOptions = {}) {
+    if (Object.prototype.hasOwnProperty.call(startOptions, 'visitorKey')) {
+      state.visitorKey = String(startOptions.visitorKey || '');
+    }
+    const pollToken = startOptions.pollToken || nextBrowserSecret('poll1_');
+    const sessionToken = startOptions.sessionToken || nextBrowserSecret('session1_');
+    const input = Object.prototype.hasOwnProperty.call(startOptions, 'input')
+      ? startOptions.input
+      : {
+        pollTokenHash: startOptions.pollTokenHash || sha256Base64Url(pollToken),
+        sessionTokenHash: startOptions.sessionTokenHash || sha256Base64Url(sessionToken)
+      };
+    const response = invokeRaw('beginOAuthSignIn', input);
+    const result = {
+      response,
+      pollToken,
+      sessionToken,
+      input,
+      visitorKey: state.visitorKey
+    };
+    if (!response || response.ok !== true) return result;
+    const data = response.data;
+    const authorizationUrl = new URL(String(data.authorizationUrl));
+    const stateToken = authorizationUrl.searchParams.get('state');
+    return {
+      ...result,
+      flowId: data.flowId,
+      expiresAt: data.expiresAt,
+      authorizationUrl,
+      stateToken,
+      stateRecord: state.stateTokens.get(stateToken) || null
+    };
+  }
+
+  function callbackEvent(start, values = {}, eventOverrides = {}) {
+    const stateArguments = start && start.stateRecord
+      ? { ...start.stateRecord.arguments }
+      : {};
+    const parameter = { ...stateArguments, ...values, ...(eventOverrides.parameter || {}) };
+    const parameters = Object.fromEntries(Object.entries(parameter).map(([name, value]) =>
+      [name, [String(value)]])
+    );
+    Object.entries(eventOverrides.parameters || {}).forEach(([name, value]) => {
+      parameters[name] = Array.isArray(value) ? value.map(String) : [String(value)];
+    });
+    return { parameter, parameters };
+  }
+
+  function finishOAuth(start, finishOptions = {}) {
+    if (!start || !start.response || start.response.ok !== true) {
+      throw new TypeError('A successful startOAuth result is required');
+    }
+    if (Object.prototype.hasOwnProperty.call(finishOptions, 'visitorKey')) {
+      state.visitorKey = String(finishOptions.visitorKey || '');
+    }
+    const callbackValues = {};
+    let code = '';
+    if (Object.prototype.hasOwnProperty.call(finishOptions, 'oauthError')) {
+      callbackValues.error = String(finishOptions.oauthError || 'access_denied');
+    } else {
+      state.authorizationCodeCounter += 1;
+      code = finishOptions.code || `test-authorization-code-${state.authorizationCodeCounter}`;
+      callbackValues.code = code;
+      const email = finishOptions.email === undefined
+        ? state.identityEmail
+        : String(finishOptions.email || '');
+      const claims = {
+        nonce: start.authorizationUrl.searchParams.get('nonce'),
+        ...(finishOptions.claims || {})
+      };
+      state.idToken = Object.prototype.hasOwnProperty.call(finishOptions, 'idToken')
+        ? String(finishOptions.idToken || '')
+        : issueIdToken(email, claims, finishOptions.tokenOptions || {});
+      const defaultBody = {
+        access_token: 'test-access-token-not-retained',
+        expires_in: 3600,
+        id_token: state.idToken,
+        scope: 'openid email',
+        token_type: 'Bearer'
+      };
+      state.tokenExchanges.set(code, {
+        statusCode: finishOptions.tokenStatus === undefined
+          ? 200
+          : Number(finishOptions.tokenStatus),
+        body: Object.prototype.hasOwnProperty.call(finishOptions, 'tokenBody')
+          ? finishOptions.tokenBody
+          : defaultBody,
+        headers: finishOptions.tokenHeaders || {},
+        fetchError: finishOptions.tokenFetchError || null,
+        expectedCodeVerifier: start.stateRecord &&
+          start.stateRecord.arguments.oauthCodeVerifier,
+        expectedRedirectUri: start.authorizationUrl.searchParams.get('redirect_uri')
+      });
+    }
+    const event = finishOptions.event || callbackEvent(
+      start,
+      callbackValues,
+      finishOptions.eventOverrides || {}
+    );
+    const callbackOutput = invokeRaw('googleOAuthCallback_', event);
+    const pollResponse = finishOptions.skipPoll
+      ? null
+      : invokeRaw('completeOAuthSignIn',
+        finishOptions.flowId || start.flowId,
+        finishOptions.pollToken || start.pollToken);
+    if (pollResponse && pollResponse.ok === true &&
+      pollResponse.data && pollResponse.data.status === 'COMPLETE') {
+      state.sessionToken = start.sessionToken;
+    }
+    return { callbackOutput, pollResponse, event, code };
+  }
+
+  function signInAs(email, claims = {}, tokenOptions = {}, authOptions = {}) {
+    state.identityEmail = String(email || '');
+    state.sessionToken = '';
+    if (Object.prototype.hasOwnProperty.call(authOptions, 'visitorKey')) {
+      state.visitorKey = String(authOptions.visitorKey || '');
+    } else {
+      state.visitorKey = `test-visitor:${state.identityEmail || 'anonymous'}`;
+    }
+    const start = startOAuth(authOptions.start || {});
+    if (!start.response || start.response.ok !== true) return { start, finish: null };
+    const finish = finishOAuth(start, {
+      email: state.identityEmail,
+      claims,
+      tokenOptions,
+      ...(authOptions.finish || {})
+    });
+    return { start, finish };
+  }
+
   function setTokenIdentity(email, claims = {}, tokenOptions = {}) {
-    state.idToken = issueIdToken(email, claims, tokenOptions);
-    return state.idToken;
+    return signInAs(email, claims, tokenOptions);
   }
 
   function setActiveEmail(email, claims = {}, tokenOptions = {}) {
     state.activeEmail = String(email || '');
-    return state.activeEmail
-      ? setTokenIdentity(state.activeEmail, claims, tokenOptions)
-      : setIdToken('');
+    return setTokenIdentity(state.activeEmail, claims, tokenOptions);
+  }
+
+  function setVisitorKey(value) {
+    state.visitorKey = String(value || '');
+    return state.visitorKey;
+  }
+
+  function setSessionToken(value) {
+    state.sessionToken = String(value || '');
+    return state.sessionToken;
+  }
+
+  function advanceTime(seconds) {
+    state.nowMs += Number(seconds) * 1000;
+    return state.nowMs;
   }
 
   function setJwks(jwks, statusCode = 200, headers) {
     state.jwks = jwks || { keys: [] };
     state.jwksStatus = Number(statusCode);
     if (headers) state.jwksHeaders = { ...headers };
-    cache.values.clear();
+    cache.remove('google-identity-jwks:v1');
   }
 
   function failNextFetch(error) {
@@ -572,16 +864,16 @@ function createAppsScriptHarness(options = {}) {
     return context[name](...args);
   }
 
-  function invokeWithToken(name, idToken, ...args) {
+  function invokeWithToken(name, sessionToken, ...args) {
     if (!PUBLIC_RPC_SET.has(name)) {
       throw new TypeError(`Not a public RPC: ${name}`);
     }
-    return invokeRaw(name, idToken, ...args);
+    return invokeRaw(name, sessionToken, ...args);
   }
 
   function invoke(name, ...args) {
     return PUBLIC_RPC_SET.has(name)
-      ? invokeWithToken(name, state.idToken, ...args)
+      ? invokeWithToken(name, state.sessionToken, ...args)
       : invokeRaw(name, ...args);
   }
 
@@ -591,6 +883,25 @@ function createAppsScriptHarness(options = {}) {
       const error = new Error(result && result.error ? result.error.message : 'setupSystem_ failed');
       error.result = result;
       throw error;
+    }
+    if (options.autoAuthenticate !== false) {
+      const authenticated = signInAs(
+        state.identityEmail,
+        state.defaultTokenClaims,
+        state.defaultTokenOptions,
+        { visitorKey: state.visitorKey }
+      );
+      if (!authenticated.finish || !authenticated.finish.pollResponse ||
+        authenticated.finish.pollResponse.ok !== true) {
+        const response = authenticated.finish
+          ? authenticated.finish.pollResponse
+          : authenticated.start.response;
+        const error = new Error(response && response.error
+          ? response.error.message
+          : 'Initial OAuth sign-in failed');
+        error.result = response;
+        throw error;
+      }
     }
     return result.data;
   }
@@ -631,9 +942,16 @@ function createAppsScriptHarness(options = {}) {
     properties,
     cache,
     scriptLock,
+    advanceTime,
+    callbackEvent,
+    finishOAuth,
+    signInAs,
+    startOAuth,
     setActiveEmail,
     setTokenIdentity,
     setIdToken,
+    setSessionToken,
+    setVisitorKey,
     issueIdToken,
     setJwks,
     failNextFetch,
@@ -650,12 +968,16 @@ function createAppsScriptHarness(options = {}) {
 
 module.exports = {
   GOOGLE_JWKS_URL,
+  GOOGLE_OAUTH_TOKEN_URL,
   PROJECT_ROOT,
   PUBLIC_RPC_NAMES,
   SOURCE_FILES,
   TEST_GOOGLE_KEY_ID,
   TEST_GOOGLE_OAUTH_CLIENT_ID,
+  TEST_GOOGLE_OAUTH_CLIENT_SECRET,
   TEST_GOOGLE_PUBLIC_JWK,
+  TEST_SCRIPT_ID,
+  sha256Base64Url,
   signGoogleIdToken,
   createAppsScriptHarness
 };

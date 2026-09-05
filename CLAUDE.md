@@ -9,8 +9,9 @@ Build and maintain a production-usable internal equipment borrowing system for s
 - Keep the runtime free of paid infrastructure, VPS, Docker, and external databases.
 - Treat one Equipment row as one physical asset. `quantity` is always `1`; identical assets share an SKU.
 - Use the canonical English enum values from `src/Constants.gs` in storage and translate only in the UI.
-- Derive visitor identity only from a Google Identity Services ID token whose signature and claims are verified by the backend. Never use `Session.getActiveUser()`, `Session.getEffectiveUser()`, or an unverified client-supplied email/role as the visitor.
-- Deny access when the token is missing, invalid, expired, issued to another OAuth client, outside `ALLOWED_DOMAINS`, non-authoritative for the asserted email, absent from Users, inactive, or insufficiently privileged. Never auto-provision a visitor.
+- Derive visitor identity only through the server-side Google OAuth 2.0/OpenID Connect Authorization Code flow. Verify the returned ID token's signature, issuer, audience, expiry, nonce, and authoritative email on the backend. Never use `Session.getActiveUser()`, `Session.getEffectiveUser()`, or an unverified client-supplied email/role as the visitor.
+- Protect sign-in with Apps Script state, nonce, PKCE, one-time flow records, and a short-lived opaque application session. Store auth state only in `ScriptCache` under hashes of unguessable secrets; never use deployer-shared `UserProperties`, URL tokens, cookies, `localStorage`, or `sessionStorage` for the application session.
+- Deny access when the authorization proof or application session is missing, invalid, expired, replayed, issued to another OAuth client, outside `ALLOWED_DOMAINS`, non-authoritative for the asserted email, absent from Users, inactive, or insufficiently privileged. Never auto-provision a visitor.
 - Enforce authorization in every server mutation. Hiding a button is not authorization.
 - Put every state-changing workflow under `LockService.getScriptLock()`, re-read authoritative rows inside the lock, and validate the exact source state.
 - Never hard-delete Equipment, Borrow, Users, Categories, IncludedItems, or History records. Use lifecycle statuses.
@@ -18,7 +19,7 @@ Build and maintain a production-usable internal equipment borrowing system for s
 - Use bulk `getValues()`/`setValues()` and header-based records. Do not read a sheet cell-by-cell.
 - Cache only performance data. Never use cached roles, availability, active-loan state, or counters for correctness.
 - Internal server helpers end in `_`; public RPC functions are narrow, guarded wrappers.
-- Do not introduce unfinished runtime placeholders. Spreadsheet ID, Drive folder ID, web-app URL, allowed domains, Google Web OAuth Client ID, and initial admin email remain deployment configuration in Script Properties; credentials and resource IDs must never be hardcoded or committed.
+- Do not introduce unfinished runtime placeholders. Spreadsheet ID, Drive folder ID, web-app URL, allowed domains, Google Web OAuth Client ID and secret, authentication TTLs, and initial admin email remain deployment configuration in Script Properties; credentials and resource IDs must never be hardcoded or committed.
 
 ## V1 state model
 
@@ -59,4 +60,4 @@ Complete this checklist at the end of every phase:
 
 ## Current delivery status
 
-Phases 1–7 source delivery is complete and the original `yru.ac.th` deployment passed live testing. The external-account authentication release still requires a versioned redeploy and live Google Identity Services acceptance; follow `docs/DEPLOYMENT.md` and the exact state in `docs/MEMORY.md`.
+Phases 1–7 source delivery is complete and the original `yru.ac.th` deployment passed live testing. The external-account authentication release now uses server-side Authorization Code flow and still requires OAuth client/redirect configuration, a versioned redeploy, and live Workspace/Gmail acceptance; follow `docs/DEPLOYMENT.md` and the exact state in `docs/MEMORY.md`.
